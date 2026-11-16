@@ -53,6 +53,11 @@ class Steps:
         self.idem: str = "gherkin-fixed-key"
         self.env: dict = {}
         self.cancelled_digest: str | None = None
+        # Every CLI invocation appends its request log here (see conftest shim),
+        # so assertions can be made on what crossed the transport boundary.
+        self.wire: list[dict] = []
+        self.recording: str | None = None
+        self.cassette: dict | None = None
 
     # -- helpers ---------------------------------------------------------
 
@@ -64,21 +69,31 @@ class Steps:
     def statuses(self) -> list[str]:
         return [e.get("status") for e in self.envelopes]
 
-    def _state(self) -> dict:
-        """Applied state, falling back to the pristine fixture seeds."""
-        p = self.cli.workspace / ".scutch" / "state" / "saleor.json"
-        if p.is_file():
-            return json.loads(p.read_text())
-        seed = self.cli.workspace / "fixtures" / "saleor"
-        return {
-            "customers": json.loads((seed / "customers.json").read_text()),
-            "orders": json.loads((seed / "orders.json").read_text()),
-        }
+    def _exchanges(self) -> list[dict]:
+        out: list[dict] = []
+        for f in sorted((self.cli.workspace / "fixtures" / "saleor").glob("*.json")):
+            out.extend(json.loads(f.read_text()).get("exchanges", []))
+        return out
 
-    def _permissions(self, customer: str, channel: str) -> list[str]:
-        state = self._state()
-        c = state["customers"].get(customer, {})
-        for entry in c.get("channelPermissions", []):
+    def recorded_customer(self, customer: str) -> dict | None:
+        """The customer object as the recordings say it is, before any mutation.
+
+        Preconditions are read from the cassette so a scenario states what the
+        API was believed to hold — not what a mutable seed happens to contain.
+        """
+        for ex in self._exchanges():
+            if "mutation" in ex["request"]["document"]:
+                continue
+            user = (ex.get("response") or {}).get("user")
+            if user and user.get("id") == customer:
+                return user  # first read wins: the state before any mutation
+        return None
+
+    def recorded_permissions(self, customer: str, channel: str) -> list[str]:
+        user = self.recorded_customer(customer)
+        if not user:
+            return []
+        for entry in user.get("channelPermissions", []):
             if entry.get("channel", {}).get("slug") == channel:
                 return list(entry.get("permissions", []))
         return []
@@ -89,24 +104,42 @@ class Steps:
                 "--idempotency-key", self.idem]
         if approve:
             argv += ["--approve-plan", approve]
+        return self.invoke(argv, payload)
+
+    def invoke(self, argv: list[str], payload: dict | None = None) -> dict:
+        """Run the CLI and collect the request log it produced."""
+        self.cli.recording = self.recording
         env, code, err = self.cli.run(argv, stdin=payload)
-        assert env, f"no stdout from run; stderr={err}"
+        assert env, f"no stdout from {argv}; stderr={err}"
         self.envelopes.append(env)
         self.returncodes.append(code)
+        self.wire.extend(self.cli.drain_wire())
         return env
+
+    # -- wire assertions -------------------------------------------------
+
+    def mutations(self) -> list[dict]:
+        return [r for r in self.wire if r.get("kind") == "mutation"]
+
+    def queries(self) -> list[dict]:
+        return [r for r in self.wire if r.get("kind") == "query"]
 
     # -- Given -----------------------------------------------------------
 
+    def given_recording(self, name: str) -> None:
+        """Bind the scenario to one recorded HTTP session."""
+        self.recording = name
+
     def given_customer_has(self, customer: str, permission: str, channel: str) -> None:
         self.customer, self.permission, self.channel = customer, permission, channel
-        assert permission in self._permissions(customer, channel), (
-            f"fixture precondition failed: {customer} lacks {permission} on {channel}"
+        assert permission in self.recorded_permissions(customer, channel), (
+            f"recording precondition failed: {customer} lacks {permission} on {channel}"
         )
 
     def given_customer_missing(self, customer: str, permission: str, channel: str) -> None:
         self.customer, self.permission, self.channel = customer, permission, channel
-        assert permission not in self._permissions(customer, channel), (
-            f"fixture precondition failed: {customer} already has {permission} on {channel}"
+        assert permission not in self.recorded_permissions(customer, channel), (
+            f"recording precondition failed: {customer} already has {permission} on {channel}"
         )
 
     # -- When ------------------------------------------------------------
@@ -119,10 +152,7 @@ class Steps:
         nxt = self.last.get("next") or {}
         argv = nxt.get("argv")
         assert argv, f"envelope has no next.argv: {json.dumps(self.last)[:400]}"
-        env, code, err = self.cli.run(argv, stdin=nxt.get("input") or {})
-        assert env, f"no stdout following next.argv; stderr={err}"
-        self.envelopes.append(env)
-        self.returncodes.append(code)
+        env = self.invoke(argv, nxt.get("input") or {})
 
     def when_repeat_invocation(self) -> None:
         """Repeat the caller's own invocation, with the same idempotency key."""
@@ -161,18 +191,14 @@ class Steps:
         self.env = {}
 
     def when_list_customers(self) -> None:
-        env, code, err = self.cli.scutch("run", "saleor.customer.list", "--input", "@-", "--format", "json")
-        assert env, f"no stdout; stderr={err}"
-        self.envelopes.append(env)
+        self.invoke(["scutch", "run", "saleor.customer.list", "--input", "@-", "--format", "json"])
 
     def when_inspect_customer(self, customer: str) -> None:
         self.customer = customer
-        env, code, err = self.cli.scutch(
-            "run", "saleor.customer.inspect", "--input", "@-", "--format", "json",
-            stdin={"customer_id": customer},
+        self.invoke(
+            ["scutch", "run", "saleor.customer.inspect", "--input", "@-", "--format", "json"],
+            {"customer_id": customer},
         )
-        assert env, f"no stdout; stderr={err}"
-        self.envelopes.append(env)
 
     def when_context(self) -> None:
         env, code, err = self.cli.scutch("context", "--format", "json")
@@ -227,8 +253,14 @@ class Steps:
         assert "replayed_from=" in notes, json.dumps(self.last)[:800]
 
     def then_customer_holds_exactly(self, permission: str, channel: str) -> None:
+        """After an apply the projector reports the state the API returned."""
         assert self.customer
-        perms = self._permissions(self.customer, channel)
+        perms = [
+            p
+            for entry in self.last["result"]["channel_permissions"]
+            if entry.get("channel", {}).get("slug") == channel
+            for p in entry.get("permissions", [])
+        ]
         assert perms.count(permission) == 1, f"{perms}"
 
     def then_error_code(self, code: str) -> None:
@@ -293,6 +325,64 @@ class Steps:
     def then_withholds_nothing(self) -> None:
         assert not self.last.get("redacted"), self.last.get("redacted")
 
+    # -- wire ------------------------------------------------------------
+
+    def then_plan_intends_one_mutation(self, kind: str) -> None:
+        changes = self.last["plan"]["changes"]
+        assert len(changes) == 1, changes
+        assert changes[0]["kind"] == kind, changes
+
+    def then_request_log_holds_no_mutation(self) -> None:
+        assert self.mutations() == [], [m["document"][:60] for m in self.mutations()]
+
+    def then_request_log_holds_read_of(self, customer: str) -> None:
+        reads = [q for q in self.queries() if q["variables"].get("id") == customer]
+        assert reads, [q["variables"] for q in self.queries()]
+
+    def then_request_log_holds_exactly(self, count: str) -> None:
+        assert len(self.mutations()) == int(count), [
+            {"document": m["document"][:60], "variables": m["variables"]} for m in self.mutations()
+        ]
+
+    def then_mutation_calls(self, field: str) -> None:
+        doc = self.mutations()[0]["document"]
+        assert f"{field}(" in doc, doc
+
+    def then_mutation_sends(self, *pairs: str) -> None:
+        variables = self.mutations()[0]["variables"]
+        expected = dict(pairs)
+        assert variables == expected, {"sent": variables, "expected": expected}
+
+    def then_no_credential_in_exchanges(self) -> None:
+        import re as _re
+
+        text = json.dumps(self.wire)
+        assert not self._cassette_contains_secret(text), "a credential reached the wire log"
+
+    def _cassette_contains_secret(self, text: str) -> bool:
+        import os as _os
+        import re as _re
+
+        token = _os.environ.get("SCUTCH_SALEOR_TOKEN", "")
+        if token and token in text:
+            return True
+        return bool(_re.search(r"Bearer\s+[A-Za-z0-9._\-]{8,}", text))
+
+    def then_hint_says_rerecord(self) -> None:
+        hint = (self.last.get("error") or {}).get("hint", "")
+        assert "re-record" in hint, hint
+
+    def when_request_unrecorded(self) -> None:
+        """Call a provider method whose query the recording does not contain.
+
+        A changed query or a new call site must fail loudly: replay inventing a
+        response would make a contract test pass while the API contract broke.
+        """
+        self.invoke(
+            ["scutch", "run", "saleor.customer.list", "--input", "@-", "--format", "json"],
+            {"limit": 5},
+        )
+
     def then_reports_redacted_field(self) -> None:
         assert self.last["redacted"], self.last
 
@@ -301,6 +391,7 @@ class Steps:
 # step dispatch
 
 PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r'^the recording "([^"]+)"$'), "given_recording"),
     (re.compile(r'^customer "([^"]+)" already has permission "([^"]+)" on channel "([^"]+)"$'), "given_customer_has"),
     (re.compile(r'^customer "([^"]+)" is missing permission "([^"]+)" on channel "([^"]+)"$'), "given_customer_missing"),
     (re.compile(r"^I preview the permission repair$"), "when_preview"),
@@ -316,6 +407,15 @@ PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r'^the result lists "([^"]+)"$'), "then_result_lists"),
     (re.compile(r"^the result has no restricted fields$"), "then_result_has_no_restricted_fields"),
     (re.compile(r"^the envelope reports a redacted field$"), "then_reports_redacted_field"),
+    (re.compile(r'^the plan intends one mutation of kind "([^"]+)"$'), "then_plan_intends_one_mutation"),
+    (re.compile(r"^the request log holds no mutation$"), "then_request_log_holds_no_mutation"),
+    (re.compile(r'^the request log holds a read of "([^"]+)"$'), "then_request_log_holds_read_of"),
+    (re.compile(r"^the request log holds exactly (\d+) mutation$"), "then_request_log_holds_exactly"),
+    (re.compile(r'^that mutation calls "([^"]+)"$'), "then_mutation_calls"),
+    (re.compile(r"^that mutation sends (.+)$"), "then_mutation_sends"),
+    (re.compile(r"^no credential appears in the recorded exchanges$"), "then_no_credential_in_exchanges"),
+    (re.compile(r"^the hint says to re-record the fixture$"), "then_hint_says_rerecord"),
+    (re.compile(r"^I request an operation whose query is not recorded$"), "when_request_unrecorded"),
     (re.compile(r"^the envelope withholds nothing$"), "then_withholds_nothing"),
     (re.compile(r"^I ask for the workspace context$"), "when_context"),
     (re.compile(r'^I describe "([^"]+)"$'), "when_describe"),
@@ -349,6 +449,14 @@ def split_list(text: str) -> tuple[str, ...]:
     return tuple(re.findall(r'"([^"]+)"', text))
 
 
+def _var_pairs(text: str) -> tuple[tuple[str, str], ...]:
+    """`id "x", channel "y" and permission "z"` -> (("id","x"), ...)."""
+    names = re.findall(r'(\w+) "', text)
+    values = re.findall(r'"([^"]+)"', text)
+    assert len(names) == len(values), text
+    return tuple(zip(names, values))
+
+
 def execute(scenario: Scenario, steps: Steps) -> None:
     for keyword, text in scenario.steps:
         for pattern, method in PATTERNS:
@@ -358,6 +466,8 @@ def execute(scenario: Scenario, steps: Steps) -> None:
             fn = getattr(steps, method)
             if method in ("then_input_schema_requires", "then_idempotency_covers"):
                 fn(*split_list(text))
+            elif method == "then_mutation_sends":
+                fn(*_var_pairs(text))
             else:
                 fn(*m.groups())
             break

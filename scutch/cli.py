@@ -225,6 +225,43 @@ def status_cmd(
     raise typer.Exit(code)
 
 
+@app.command("record")
+def record_cmd(
+    provider: str = typer.Argument(..., help="Provider name, e.g. saleor"),
+    endpoint: str = typer.Option(..., "--endpoint", help="GraphQL endpoint to record against"),
+    operation: str = typer.Option(..., "--operation", "-o"),
+    input: str | None = typer.Option(None, "--input", "-i"),
+    approve: bool = typer.Option(False, "--approve", help="Required if the operation mutates"),
+    document: str | None = typer.Option(None, "--document", help="Record one raw GraphQL document instead of an operation"),
+    variables: str | None = typer.Option(None, "--variables", help="JSON variables for --document"),
+    out: str | None = typer.Option(None, "--out", help="Cassette path (default fixtures/<provider>/<op>.json)"),
+    format: str = typer.Option("json", "--format", "-f"),
+) -> None:
+    """Record HTTP exchanges from a live endpoint into a replay cassette."""
+    from pathlib import Path as _Path
+
+    from .record import record_operation
+
+    ws = _ws()
+    try:
+        payload_input = _read_input(input)
+    except ScutchError as exc:
+        _fail(exc)
+    try:
+        import json as _json
+
+        result = record_operation(
+            ws, provider, endpoint, operation, payload_input, approve,
+            _Path(out) if out else None,
+            document_only=document is not None,
+            document=document,
+            variables=_json.loads(variables) if variables else None,
+        )
+    except ScutchError as exc:
+        _fail(exc)
+    _emit(result, format)
+
+
 @app.command("cancel")
 def cancel_cmd(
     job_or_run: str = typer.Argument(..., help="Job or run id from a needs_approval envelope"),

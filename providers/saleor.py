@@ -1,150 +1,147 @@
 """Saleor provider: the seam between operations and the Saleor GraphQL API.
 
-Fixture mode reads ``fixtures/saleor/``. Live mode talks HTTP using a token
-resolved by the runtime (``SCUTCH_SALEOR_TOKEN``). Neither mode ever lets a
-credential value reach an envelope: the token lives only on this object, and
-``redact()`` proves it is absent from anything we return.
+There is **one** code path. Every mode goes through ``GraphQLTransport`` and the
+real query/mutation text; modes differ only in what answers the HTTP call:
+
+- ``live``  — real ``urllib``; token from ``SCUTCH_SALEOR_TOKEN``.
+- ``replay`` — recorded exchanges from ``fixtures/<provider>/*.json``. Unknown
+  requests fail loudly (no silent fallback), so a changed query is a test
+  failure, not a green run.
+
+The transport is where API assumptions live — query text, variable names, error
+mapping, auth header. Doubling *below* it (at the socket) keeps all of that real.
+Doubling *above* it (a fake adapter) would delete exactly what contract tests
+exist to check.
 """
 
 from __future__ import annotations
 
-import copy
 import json
+import os
+import urllib.request
+from pathlib import Path
 from typing import Any
 
-from scutch.providers import Resolution, fixture_files, state_path
+from scutch.errors import NotFound, ProviderError
+from scutch.providers import Resolution, replay_data
 
 
-class SaleorApi:
-    def __init__(self, resolution: Resolution):
-        self.mode = resolution.mode
-        self.endpoint = resolution.config.notes or "https://saleor.example/graphql/"
-        self._secret = resolution.secret
-        self._state_file = state_path(resolution) if resolution.mode == "fixture" else None
-        if resolution.mode == "fixture":
-            self._fixtures: dict[str, Any] = fixture_files(resolution)
-            self._live: dict[str, Any] | None = None
-        else:
-            self._live = {}
-        self._resolution = resolution
+# --------------------------------------------------------------------------
+# GraphQL documents. These strings are the API contract.
 
-    # -- fixture state ---------------------------------------------------
 
-    def _state(self) -> dict[str, Any]:
-        """Applied fixture state, overlaid on the read-only seed."""
-        if self._live is not None:
-            return self._live
-        assert self._state_file is not None
-        if self._state_file.is_file():
-            self._live = json.loads(self._state_file.read_text())
-        else:
-            self._live = {"customers": copy.deepcopy(self._fixtures.get("customers", {})),
-                          "orders": copy.deepcopy(self._fixtures.get("orders", {}))}
-        return self._live
+Q_CUSTOMER = """
+query Customer($id: ID!) {
+  user(id: $id) {
+    id
+    email
+    channelPermissions { channel { slug } permissions }
+  }
+}
+"""
 
-    def _persist(self) -> None:
-        if self._live is None or self._state_file is None:
+Q_CUSTOMERS = """
+query Customers($n: Int!) {
+  users(first: $n) {
+    edges { node { id email channelPermissions { channel { slug } permissions } } }
+  }
+}
+"""
+
+Q_ORDERS = """
+query Orders($id: ID!) {
+  user(id: $id) {
+    orders(first: 10) { edges { node { id status total { gross { amount } } } } }
+  }
+}
+"""
+
+M_GRANT = """
+mutation Grant($id: ID!, $channel: String!, $permission: PermissionEnum!) {
+  channelUpdatePermission(userId: $id, channelSlug: $channel, permission: $permission) {
+    user { id }
+    errors { field message code }
+  }
+}
+"""
+
+
+# --------------------------------------------------------------------------
+# Transport
+
+
+class GraphQLTransport:
+    """Sends one GraphQL document. Live and replay differ only here."""
+
+    def __init__(self, endpoint: str, secret: str | None, replay: dict[str, Any] | None):
+        self.endpoint = endpoint
+        self._secret = secret
+        self._replay = replay
+        self.sent: list[dict[str, Any]] = []
+        # Identical requests can legitimately return different responses (a read
+        # before and after a mutation). Consumption is therefore positional:
+        # each match advances a per-request cursor.
+        self._cursor: dict[str, int] = {}
+
+    @property
+    def mode(self) -> str:
+        return "replay" if self._replay is not None else "live"
+
+    def execute(self, document: str, variables: dict[str, Any]) -> dict[str, Any]:
+        entry = {"kind": "mutation" if "mutation" in document else "query",
+                 "document": " ".join(document.split()), "variables": variables}
+        self.sent.append(entry)
+        self._log(entry)
+        if self._replay is not None:
+            return self._from_replay(document, variables)
+        return self._over_http(document, variables)
+
+    @staticmethod
+    def _log(entry: dict[str, Any]) -> None:
+        """Append to the optional request log.
+
+        Tests set SCUTCH_WIRE_LOG so a scenario can assert on what was sent,
+        without trusting the provider's own bookkeeping.
+        """
+        path = os.environ.get("SCUTCH_WIRE_LOG")
+        if not path:
             return
-        self._state_file.parent.mkdir(parents=True, exist_ok=True)
-        self._state_file.write_text(json.dumps(self._live, indent=2))
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("a") as fh:
+            fh.write(json.dumps(entry, sort_keys=True) + "\n")
 
-    # -- reads -----------------------------------------------------------
+    # -- replay ----------------------------------------------------------
 
-    def _fixture_customer(self, customer_id: str) -> dict[str, Any]:
-        customers = self._state()["customers"]
-        if customer_id not in customers:
-            from scutch.errors import NotFound
-
-            raise NotFound(
-                f"customer {customer_id!r} does not exist",
-                hint="use scutch.list_customers to find a valid id",
-                details={"available": sorted(customers)},
+    def _from_replay(self, document: str, variables: dict[str, Any]) -> dict[str, Any]:
+        key = {"document": " ".join(document.split()), "variables": variables}
+        fingerprint = json.dumps(key, sort_keys=True)
+        matches = [e for e in self._replay["exchanges"] if e["request"] == key]
+        if not matches:
+            raise ProviderError(
+                "no recorded response for this request",
+                hint="the query or its variables changed; re-record the fixture",
+                details={
+                    "recorded": [e["name"] for e in self._replay["exchanges"]],
+                    "request": key,
+                },
             )
-        # Copy on read: callers must never alias mutable provider state.
-        return copy.deepcopy(customers[customer_id])
+        index = self._cursor.get(fingerprint, 0)
+        if index >= len(matches):
+            raise ProviderError(
+                "replay exhausted for this request",
+                hint=f"{len(matches)} response(s) recorded but more were requested; "
+                     "the operation made an extra call",
+                details={"request": key, "recorded": len(matches)},
+            )
+        self._cursor[fingerprint] = index + 1
+        return matches[index]["response"]
 
-    def get_customer(self, customer_id: str) -> dict[str, Any]:
-        if self.mode == "fixture":
-            return self._fixture_customer(customer_id)
-        return self._graphql(
-            """
-            query Customer($id: ID!) {
-              user(id: $id) { id email channelPermissions { channel { slug } permissions } }
-            }
-            """,
-            {"id": customer_id},
-        )["user"]
+    # -- http ------------------------------------------------------------
 
-    def list_customers(self, limit: int = 20) -> list[dict[str, Any]]:
-        if self.mode == "fixture":
-            customers = self._state()["customers"]
-            return [
-                {
-                    "customer_id": cid,
-                    "email": c.get("email"),
-                    "channel_permissions": c.get("channelPermissions", []),
-                }
-                for cid, c in list(customers.items())[:limit]
-            ]
-        data = self._graphql(
-            "query Customers($n: Int!) { users(first: $n) { edges { node { id email channelPermissions { channel { slug } permissions } } } } }",
-            {"n": limit},
-        )
-        return [
-            {
-                "customer_id": e["node"]["id"],
-                "email": e["node"]["email"],
-                "channel_permissions": e["node"]["channelPermissions"],
-            }
-            for e in data["users"]["edges"]
-        ]
-
-    def orders(self, customer_id: str) -> list[dict[str, Any]]:
-        if self.mode == "fixture":
-            return self._state()["orders"].get(customer_id, [])
-        return self._graphql(
-            "query Orders($id: ID!) { user(id: $id) { orders(first: 10) { edges { node { id status total { gross { amount } } } } } } }",
-            {"id": customer_id},
-        )["user"]["orders"]["edges"]
-
-    # -- mutation --------------------------------------------------------
-
-    def apply_permission(self, customer_id: str, channel: str, permission: str) -> dict[str, Any]:
-        """Add one channel permission. Called only from an approved apply path."""
-        if self.mode == "fixture":
-            state = self._state()["customers"]
-            if customer_id not in state:
-                self._fixture_customer(customer_id)  # raises NotFound with details
-            customer = state[customer_id]
-            perms = customer.setdefault("channelPermissions", [])
-            for entry in perms:
-                if entry.get("channel", {}).get("slug") == channel:
-                    if permission not in entry.setdefault("permissions", []):
-                        entry["permissions"].append(permission)
-                    self._persist()
-                    return {"applied": True, "already_present": False}
-            perms.append({"channel": {"slug": channel}, "permissions": [permission]})
-            self._persist()
-            return {"applied": True, "already_present": False}
-        return self._graphql(
-            """
-            mutation Grant($id: ID!, $channel: String!, $permission: PermissionEnum!) {
-              channelUpdatePermission(userId: $id, channelSlug: $channel, permission: $permission) {
-                user { id }
-                errors { field message code }
-              }
-            }
-            """,
-            {"id": customer_id, "channel": channel, "permission": permission},
-        )
-
-    # -- internals -------------------------------------------------------
-
-    def _graphql(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
-        import urllib.request
-
-        assert self._secret, "live provider resolved without a secret"
-        body = json.dumps({"query": query, "variables": variables}).encode()
+    def _over_http(self, document: str, variables: dict[str, Any]) -> dict[str, Any]:
+        assert self._secret, "live transport resolved without a secret"
+        body = json.dumps({"query": document, "variables": variables}).encode()
         req = urllib.request.Request(
             self.endpoint,
             data=body,
@@ -156,13 +153,72 @@ class SaleorApi:
         with urllib.request.urlopen(req, timeout=20) as resp:  # noqa: S310
             payload = json.loads(resp.read())
         if payload.get("errors"):
-            from scutch.errors import ProviderError
-
             raise ProviderError("Saleor rejected the request", details={"errors": payload["errors"]})
         return payload["data"]
 
-    def __repr__(self) -> str:  # never leak the token through repr
+
+# --------------------------------------------------------------------------
+# API
+
+
+class SaleorApi:
+    def __init__(self, resolution: Resolution):
+        endpoint = resolution.config.notes or "https://saleor.example/graphql/"
+        self._transport = GraphQLTransport(
+            endpoint,
+            resolution.secret,
+            replay_data(resolution) if resolution.mode == "replay" else None,
+        )
+        self.endpoint = endpoint
+
+    @property
+    def mode(self) -> str:
+        return self._transport.mode
+
+    def __repr__(self) -> str:  # never leak the token
         return f"SaleorApi(mode={self.mode!r}, endpoint={self.endpoint!r}, secret=<redacted>)"
+
+    # -- reads -----------------------------------------------------------
+
+    def get_customer(self, customer_id: str) -> dict[str, Any]:
+        data = self._transport.execute(Q_CUSTOMER, {"id": customer_id})
+        user = data.get("user")
+        if not user:
+            raise NotFound(
+                f"customer {customer_id!r} does not exist",
+                hint="use saleor.customer.list to find a valid id",
+            )
+        return user
+
+    def list_customers(self, limit: int = 20) -> list[dict[str, Any]]:
+        data = self._transport.execute(Q_CUSTOMERS, {"n": limit})
+        return [
+            {
+                "customer_id": e["node"]["id"],
+                "email": e["node"]["email"],
+                "channel_permissions": e["node"].get("channelPermissions", []),
+            }
+            for e in data["users"]["edges"]
+        ]
+
+    def orders(self, customer_id: str) -> list[dict[str, Any]]:
+        data = self._transport.execute(Q_ORDERS, {"id": customer_id})
+        return data["user"]["orders"]["edges"]
+
+    # -- mutation --------------------------------------------------------
+
+    def apply_permission(self, customer_id: str, channel: str, permission: str) -> dict[str, Any]:
+        data = self._transport.execute(
+            M_GRANT, {"id": customer_id, "channel": channel, "permission": permission}
+        )
+        result = data.get("channelUpdatePermission") or {}
+        errors = result.get("errors") or []
+        if errors:
+            raise ProviderError(
+                "Saleor refused the permission change",
+                details={"errors": errors},
+            )
+        return {"applied": True, "user": (result.get("user") or {}).get("id")}
 
 
 def make(resolution: Resolution) -> SaleorApi:

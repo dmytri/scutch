@@ -67,6 +67,13 @@ cancel job:
 runs:
     @scutch runs --format json
 
+# --- recording --------------------------------------------------------------
+
+# Record HTTP exchanges from a live endpoint into a replay cassette.
+# Requires a real token in the provider env var, and --approve for mutations.
+record provider endpoint operation input approve="":
+    @scutch record {{provider}} --endpoint {{endpoint}} --operation {{operation}} --input '{{input}}' {{approve}} --format json
+
 # --- interface & maintenance ------------------------------------------------
 
 # Human interface: same transitions, forms and approvals.
@@ -85,7 +92,7 @@ validate:
 test:
     @PYTHONPATH=. python -m pytest tests -q
 
-# Reset applied fixture state and local history.
+# Reset local run history (recordings in fixtures/ are untouched).
 reset:
-    @rm -rf .scutch/runs/* .scutch/state
-    @echo "fixture state reset; seeds untouched"
+    @rm -rf .scutch/runs/*
+    @echo "run history reset; recordings untouched"

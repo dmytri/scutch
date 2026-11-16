@@ -135,14 +135,14 @@ scutch.toml               providers + policy
 operations/**/*.py        ordinary typed functions, registered by decorator
 providers/*.py            the seam to an external service
 specs/*.feature           executable Gherkin for behaviours to preserve
-fixtures/<provider>/      read-only seeds (mutations persist to .scutch/state)
+fixtures/<provider>/      recorded HTTP exchanges, one cassette per scenario
 docs/generated/           regenerated from descriptors — never hand-edited
 .scutch/runs/             inspectable run records
 .scutch/artifacts/        run artifacts (restricted by default)
 ```
 
-Deleting `.scutch/` removes history, applied fixture state and the idempotency
-cache. It never removes the information needed to formulate an invocation.
+Deleting `.scutch/` removes history and the idempotency cache. It never removes
+the information needed to formulate an invocation.
 
 ## Agent skill
 
@@ -159,10 +159,42 @@ idempotency and recovery, and the authoring rules — with
 The skill is a *guide to the same contract*: it adds no capabilities, and
 `scutch describe` remains authoritative for any individual operation.
 
+## Recordings, not fixtures
+
+Contract tests replay HTTP, not an application model. `scutch record` runs an
+operation against a real endpoint once and writes the request/response pairs to
+`fixtures/<provider>/<name>.json`; `mode = "replay"` then serves them back with
+no network and no token.
+
+```bash
+scutch record saleor --endpoint https://shop.example/graphql/ \
+  --operation saleor.customer.repair --input '{"customer_id":"cust_456","permission":"read_orders"}' --approve
+```
+
+Why at the socket rather than the provider: doubling the *provider* would stub
+out the adapter, which is exactly where the API assumptions live — query text,
+variable names, error mapping. A test that fakes the adapter cannot fail when the
+GraphQL document is wrong. Replay keeps the document real and only replays the
+response.
+
+Consequences worth knowing:
+
+- **One cassette per scenario.** A merged directory lets one scenario's requests
+  shadow another's; `SCUTCH_REPLAY=<name>` binds a scenario to one recording.
+- **An unknown request fails loudly** — never falls back to a plausible answer.
+  A changed query is a test failure, not a green run.
+- **Preconditions come from the recording.** `Given customer "x" has ...` reads
+  the cassette, so a scenario states what the API was believed to hold.
+- **An empty plan records no mutation**, because the runtime never enters the
+  apply function in that case.
+
+What replay cannot prove: rate limits, partial failures, eventual consistency,
+auth expiry. Those need a live sandbox run.
+
 ## Verification
 
 ```bash
-pytest            # 71 tests: contract, lifecycle, Gherkin, TUI, acceptance
+pytest            # 76 tests: contract, lifecycle, Gherkin, TUI, acceptance
 scutch validate   # contracts and specs agree
 scutch doctor     # every documented capability is servable
 ```

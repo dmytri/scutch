@@ -3,7 +3,7 @@ name = "scutch-demo"
 description = "Example workspace: Saleor customer permissions."
 
 [providers.saleor]
-mode = "fixture"              # fixture | live
+mode = "replay"              # fixture | live
 data = "fixtures/saleor"
 env = "SCUTCH_SALEOR_TOKEN"   # used only in live mode
 notes = "https://saleor.example/graphql/"

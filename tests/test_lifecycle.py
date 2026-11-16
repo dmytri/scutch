@@ -11,7 +11,7 @@ import json
 REPAIR = ["run", "saleor.customer.repair", "--format", "json"]
 
 
-def test_envelopes_never_contain_credentials(shim, cli):
+def test_envelopes_never_contain_credentials(cli):
     """Redaction: no provider secret, and nothing shaped like one, in any output."""
     env, code, err = cli.scutch(*REPAIR, "--input", "@-", stdin={"customer_id": "cust_456", "permission": "read_orders"})
     text = json.dumps(env)
@@ -32,16 +32,21 @@ def test_private_result_fields_are_withheld(cli):
     assert "raw_response" in env["redacted"]
 
 
-def test_missing_input_is_recoverable_from_envelope_alone(cli):
+def test_missing_input_is_recoverable_from_envelope_alone(repair_world):
+    cli = repair_world
     env, code, _ = cli.scutch(*REPAIR, "--input", "@-", stdin={"permission": "read_orders"})
     assert env["status"] == "needs_input"
     assert env["error"]["code"] == "missing_input"
     assert env["error"]["details"]["missing"] == ["customer_id"]
     assert env["next"]["argv"][:3] == ["scutch", "run", "saleor.customer.repair"]
-    # Filling the template with the returned canonical inputs + the missing field works.
-    follow = dict(env["next"]["input"], customer_id="cust_789")
+    # Filling the template with the returned canonical inputs + the missing
+    # field produces a valid transition: this customer needs the grant, so the
+    # next state is needs_approval with a plan and a digest.
+    follow = dict(env["next"]["input"], customer_id="cust_456")
     env2, _, _ = cli.run(env["next"]["argv"], stdin=follow)
-    assert env2["status"] == "complete"
+    assert env2["status"] == "needs_approval"
+    assert env2["plan"]["digest"]
+    assert env2["next"]["input"]["customer_id"] == "cust_456"
 
 
 def test_invalid_input_reports_violations(cli):
@@ -80,7 +85,8 @@ def test_approval_is_bound_to_the_digest(cli):
     assert not [r for r in runs if r["phase"] == "applied"]
 
 
-def test_apply_then_repeat_never_mutates_twice(cli):
+def test_apply_then_repeat_never_mutates_twice(repair_world):
+    cli = repair_world
     payload = {"customer_id": "cust_456", "permission": "read_orders"}
     plan, _, _ = cli.scutch(*REPAIR, "--input", "@-", "--idempotency-key", "k-fixed", stdin=payload)
     digest = plan["plan"]["digest"]
@@ -88,15 +94,18 @@ def test_apply_then_repeat_never_mutates_twice(cli):
     assert first["status"] == "complete"
     assert first["result"]["status"] == "applied"
 
-    state = json.loads((cli.workspace / ".scutch/state/saleor.json").read_text())
-    perms = state["customers"]["cust_456"]["channelPermissions"]
-    assert perms == [{"channel": {"slug": "retail"}, "permissions": ["read_orders"]}]
+    # Exactly one mutation reached the wire, and the projector reported the
+    # state the API returned after it.
+    wire = cli.drain_wire()
+    assert len([w for w in wire if w["kind"] == "mutation"]) == 1
+    assert first["result"]["channel_permissions"] == [
+        {"channel": {"slug": "retail"}, "permissions": ["read_orders"]}
+    ]
 
     second, _, _ = cli.scutch(*REPAIR, "--input", "@-", "--idempotency-key", "k-fixed", "--approve-plan", digest, stdin=payload)
     assert second["status"] == "complete"
     assert any(n.startswith("replayed_from=") for n in second["notes"])
-    state2 = json.loads((cli.workspace / ".scutch/state/saleor.json").read_text())
-    assert state2["customers"]["cust_456"]["channelPermissions"] == perms
+    assert [w for w in cli.drain_wire() if w["kind"] == "mutation"] == []
 
 
 def test_idempotency_key_reuse_with_different_inputs_is_refused(cli):

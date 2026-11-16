@@ -31,8 +31,11 @@ from scutch.tui import (  # noqa: E402
 
 @pytest.fixture()
 def ws(workspace):
+    import os
+
     from scutch.workspace import load_workspace
 
+    os.environ["SCUTCH_REPLAY"] = "scenario-repair"
     return load_workspace(workspace)
 
 

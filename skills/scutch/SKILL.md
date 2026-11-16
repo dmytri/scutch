@@ -84,6 +84,14 @@ ordered changes. Therefore:
   `next.cancel` on a `planned` status). Approving a cancelled digest returns
   `plan_cancelled` — preview again rather than hunting for a workaround.
 
+## Providers: replay, not fixtures
+
+`mode = "replay"` serves recorded HTTP exchanges; `mode = "live"` talks to the
+API. Both run the same provider code, so a `describe` or a plan is identical in
+either. You do not need a token to preview, and you must not record cassettes
+unless the human asks: `scutch record` writes to the repository and contacts a
+real endpoint.
+
 ## Repetition
 
 - Pass `--idempotency-key <meaningful-intent>` for consequential work. Same key

@@ -11,7 +11,7 @@ consulted except the environment variables a provider explicitly names.
 name = "my-repo"
 
 [providers.saleor]
-mode = "fixture"             # fixture | live
+mode = "replay"              # replay | live
 data = "fixtures/saleor"     # fixture seeds (read-only)
 env = "SCUTCH_SALEOR_TOKEN"  # live mode: env var holding the secret
 notes = "https://saleor.example/graphql/"
@@ -27,7 +27,7 @@ bootstrap = "Custom bootstrap text for agents…"
 
 | mode | behaviour |
 |---|---|
-| `fixture` | Backed by `fixtures/<provider>/*.json`. Deterministic, credential-free. Mutations persist to `.scutch/state/<provider>.json`; seeds are never modified. |
+| `replay` | Serves recorded HTTP exchanges from `fixtures/<provider>/*.json`. Deterministic, credential-free, no network. Unknown requests fail loudly. |
 | `live` | The secret comes from `env`, or from `resolve = "cmd:pass show saleor"`. It is handed to the worker only. |
 
 Either way, the **handle** is public (`{"provider": "saleor", "resolution":
@@ -124,6 +124,18 @@ def diagnose(..., *, ctx) -> Report:
 Undeclared artifact names raise a contract error. Artifacts land in
 `.scutch/artifacts/<run_id>/` and appear in the envelope as
 `{"name", "path", "restricted": true, "bytes"}` — a reference, not content.
+
+## Recordings
+
+```bash
+scutch record saleor --endpoint <url> --operation <name> --input '<json>' [--approve]
+```
+
+Writes `fixtures/<provider>/<cassette>.json` containing scrubbed request/response
+pairs. `--approve` is required when the operation mutates, so recording can never
+silently change an environment you did not intend to touch. Re-record whenever a
+query changes: replay refuses unknown requests, which is what makes the cassette
+a contract rather than a convenience.
 
 ## Features (Gherkin)
 

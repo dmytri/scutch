@@ -30,7 +30,8 @@ Feature: Customer permission repair
   the plan digest arrives.
 
   Scenario: Repeating an already-applied repair
-    Given customer "cust_123" already has permission "read_orders" on channel "retail"
+    Given the recording "scenario-nochange"
+    And customer "cust_123" already has permission "read_orders" on channel "retail"
     When I preview the permission repair
     Then the envelope status is "complete"
     And the result status is "no_change"
@@ -38,7 +39,8 @@ Feature: Customer permission repair
     And no mutation is requested
 
   Scenario: A missing permission requires approval bound to a digest
-    Given customer "cust_456" is missing permission "read_orders" on channel "retail"
+    Given the recording "scenario-repair"
+    And customer "cust_456" is missing permission "read_orders" on channel "retail"
     When I preview the permission repair
     Then the envelope status is "needs_approval"
     And there is exactly one change
@@ -47,7 +49,8 @@ Feature: Customer permission repair
     And no mutation has happened
 
   Scenario: The published next argv applies the plan exactly once
-    Given customer "cust_456" is missing permission "read_orders" on channel "retail"
+    Given the recording "scenario-repair"
+    And customer "cust_456" is missing permission "read_orders" on channel "retail"
     When I preview the permission repair
     And I follow the published next argv
     And I repeat the original invocation unchanged
@@ -57,7 +60,8 @@ Feature: Customer permission repair
     And the customer holds exactly one "read_orders" permission on "retail"
 
   Scenario: An approval for a different plan is refused
-    Given customer "cust_456" is missing permission "read_orders" on channel "retail"
+    Given the recording "scenario-repair"
+    And customer "cust_456" is missing permission "read_orders" on channel "retail"
     When I preview the permission repair
     And I approve digest "sha256:0000"
     Then the envelope status is "needs_approval"
@@ -71,7 +75,8 @@ Feature: Customer permission repair
     And the next block carries canonical inputs and an argv
 
   Scenario: A fresh process continues from the envelope alone
-    Given customer "cust_456" is missing permission "read_orders" on channel "retail"
+    Given the recording "scenario-repair"
+    And customer "cust_456" is missing permission "read_orders" on channel "retail"
     When I preview the permission repair
     And the process restarts
     And I follow the published next argv
@@ -79,7 +84,8 @@ Feature: Customer permission repair
     And the result status is "applied"
 
   Scenario: A cancelled plan cannot be approved
-    Given customer "cust_456" is missing permission "read_orders" on channel "retail"
+    Given the recording "scenario-repair"
+    And customer "cust_456" is missing permission "read_orders" on channel "retail"
     When I preview the permission repair
     And I cancel the pending plan
     And I approve the cancelled digest

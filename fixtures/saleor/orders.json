@@ -1,9 +1,0 @@
-{
-  "cust_123": [
-    {"id": "order_1", "status": "FULFILLED", "total": {"gross": {"amount": 42.0}}},
-    {"id": "order_2", "status": "PAID", "total": {"gross": {"amount": 17.5}}}
-  ],
-  "cust_789": [
-    {"id": "order_3", "status": "UNFULFILLED", "total": {"gross": {"amount": 99.0}}}
-  ]
-}

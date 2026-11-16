@@ -1,0 +1,82 @@
+{
+  "exchanges": [
+    {
+      "name": "scenario-repair.1",
+      "request": {
+        "document": "query Customer($id: ID!) { user(id: $id) { id email channelPermissions { channel { slug } permissions } } }",
+        "variables": {
+          "id": "cust_456"
+        }
+      },
+      "response": {
+        "user": {
+          "channelPermissions": [],
+          "email": "grace@example.com",
+          "id": "cust_456"
+        }
+      }
+    },
+    {
+      "name": "scenario-repair.2",
+      "request": {
+        "document": "query Customer($id: ID!) { user(id: $id) { id email channelPermissions { channel { slug } permissions } } }",
+        "variables": {
+          "id": "cust_456"
+        }
+      },
+      "response": {
+        "user": {
+          "channelPermissions": [],
+          "email": "grace@example.com",
+          "id": "cust_456"
+        }
+      }
+    },
+    {
+      "name": "scenario-repair.3",
+      "request": {
+        "document": "mutation Grant($id: ID!, $channel: String!, $permission: PermissionEnum!) { channelUpdatePermission(userId: $id, channelSlug: $channel, permission: $permission) { user { id } errors { field message code } } }",
+        "variables": {
+          "channel": "retail",
+          "id": "cust_456",
+          "permission": "read_orders"
+        }
+      },
+      "response": {
+        "channelUpdatePermission": {
+          "errors": [],
+          "user": {
+            "id": "cust_456"
+          }
+        }
+      }
+    },
+    {
+      "name": "scenario-repair.4",
+      "request": {
+        "document": "query Customer($id: ID!) { user(id: $id) { id email channelPermissions { channel { slug } permissions } } }",
+        "variables": {
+          "id": "cust_456"
+        }
+      },
+      "response": {
+        "user": {
+          "channelPermissions": [
+            {
+              "channel": {
+                "slug": "retail"
+              },
+              "permissions": [
+                "read_orders"
+              ]
+            }
+          ],
+          "email": "grace@example.com",
+          "id": "cust_456"
+        }
+      }
+    }
+  ],
+  "note": "Recorded HTTP exchanges. Scrubbed of credentials; safe to commit.",
+  "provider": "scenario-repair"
+}

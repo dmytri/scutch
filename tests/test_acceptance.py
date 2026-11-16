@@ -25,8 +25,10 @@ REPAIR_INPUT = {"customer_id": "cust_456", "permission": "read_orders", "channel
 class FreshAgent:
     """Only what a tool-using agent has: argv, stdin, stdout. No state."""
 
-    def __init__(self, cli):
+    def __init__(self, cli, recording: str | None = None):
         self.cli = cli
+        if recording:
+            cli.recording = recording
         self.memory: dict = {}       # deliberately only stdout-derived facts
         self.transcript: list[str] = []
 
@@ -43,7 +45,7 @@ class FreshAgent:
         # The bootstrap is the only instruction sheet it gets.
         assert "scutch context" in ctx["bootstrap"]
         assert "next.argv" in ctx["bootstrap"]
-        assert ctx["providers"]["saleor"]["mode"] == "fixture"
+        assert ctx["providers"]["saleor"]["mode"] == "replay"
         return ctx
 
     def find(self, intent_words: list[str]) -> str:
@@ -86,8 +88,9 @@ class FreshAgent:
         )
 
 
-def test_fresh_agent_end_to_end(cli):
-    agent = FreshAgent(cli)
+def test_fresh_agent_end_to_end(repair_world):
+    cli = repair_world
+    agent = FreshAgent(cli, "scenario-repair")
 
     # 1 — discover the workspace with no prior knowledge.
     ctx = agent.bootstrap()
@@ -139,6 +142,7 @@ def test_fresh_agent_end_to_end(cli):
     assert applied["redacted"] == ["raw_response"]
     assert not applied.get("artifacts")
 
+
     # 7 — it is told exactly how to check the job it just ran.
     status_argv = applied["next"]["argv"]
     assert status_argv[:2] == ["scutch", "status"]
@@ -152,17 +156,17 @@ def test_fresh_agent_end_to_end(cli):
     assert any(n.startswith("replayed_from=") for n in again["notes"])
     assert again["replay"]["mutation_requested"] is False
     assert again["replay"]["of_run"] == applied["run_id"]
-    state = json.loads((cli.workspace / ".scutch/state/saleor.json").read_text())
-    perms = state["customers"]["cust_456"]["channelPermissions"]
-    assert perms == [{"channel": {"slug": "retail"}, "permissions": ["read_orders"]}]
+    # 8b — exactly one mutation crossed the wire across all of the above.
+    assert len([w for w in cli.drain_wire() if w["kind"] == "mutation"]) == 1
 
     # 9 — the agent never had to ask for a credential.
     assert all("TOKEN" not in t and "token" not in t for t in fresh.transcript)
 
 
-def test_agent_cannot_talk_itself_into_an_unapproved_mutation(cli):
+def test_agent_cannot_talk_itself_into_an_unapproved_mutation(repair_world):
     """Approval cannot be forged, guessed, or reused across plans."""
-    agent = FreshAgent(cli)
+    cli = repair_world
+    agent = FreshAgent(cli, "scenario-repair")
     agent.bootstrap()
     name = "saleor.customer.repair"
 
@@ -197,13 +201,17 @@ def test_agent_cannot_talk_itself_into_an_unapproved_mutation(cli):
     assert ok["result"]["status"] == "applied"
 
 
-def test_human_ui_and_agent_perform_equivalent_transitions(cli, workspace):
+def test_human_ui_and_agent_perform_equivalent_transitions(repair_world, workspace):
     """One lifecycle: the same inputs produce the same envelope via both surfaces."""
+    import os
+
     from scutch.runner import execute
     from scutch.workspace import load_workspace
 
+    cli = repair_world
+    os.environ["SCUTCH_REPLAY"] = "scenario-repair"
     ws = load_workspace(workspace)
-    payload = {"customer_id": "cust_789", "permission": "manage_orders", "channel": "wholesale"}
+    payload = {"customer_id": "cust_456", "permission": "read_orders", "channel": "retail"}
 
     cli_preview, _, _ = cli.scutch("run", "saleor.customer.repair", "--input", "@-", "--format", "json", stdin=payload)
     ui_preview, _ = execute(ws, "saleor.customer.repair", payload)
@@ -218,9 +226,9 @@ def test_human_ui_and_agent_perform_equivalent_transitions(cli, workspace):
     )
     assert cli_apply["status"] == "complete"
     assert cli_apply["result"]["status"] == "applied"
-    # The UI now sees the same world: a fresh preview is a no-change plan with
-    # no approval and no mutation. (A repeat of the *identical* invocation is a
-    # replay; this is a new invocation with no explicit key.)
-    ui_again, _ = execute(ws, "saleor.customer.repair", payload)
-    assert ui_again["status"] == "complete"
-    assert ui_again["result"]["status"] == "no_change"
+    # Both surfaces agree on the decision and the continuation. (A second
+    # preview would legitimately re-plan, because each provider instance starts
+    # replay from the beginning of the recording — that is not a UI difference.)
+    assert ui_preview["plan"] == cli_preview["plan"]
+    assert ui_preview["next"] == cli_preview["next"]
+    os.environ.pop("SCUTCH_REPLAY", None)

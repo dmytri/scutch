@@ -49,7 +49,7 @@ class Resolution:
     config: ProviderConfig
     secret: str | None = None
     root: Path | None = None          # workspace root
-    data_dir: Path | None = None      # fixture seeds (read-only)
+    data_dir: Path | None = None      # recorded exchanges (read-only)
 
     def public(self) -> dict[str, Any]:
         return {
@@ -59,24 +59,40 @@ class Resolution:
             "secret_present": self.secret is not None,
         }
 
+    _instance: Any = None
+
     def load(self) -> Any:
-        if self.factory is None:
-            raise ProviderError(
-                f"provider {self.name!r} has no implementation",
-                hint=f"define @provider(name={self.name!r}) in providers/{self.name}.py",
-            )
-        return self.factory(self)
+        """Build the provider object once per resolution.
+
+        Rebuilding per call would reset any per-connection state (a replay
+        cursor, a transaction, a session) between two calls of the same
+        operation — which silently changes what the operation observes.
+        """
+        if self._instance is None:
+            if self.factory is None:
+                raise ProviderError(
+                    f"provider {self.name!r} has no implementation",
+                    hint=f"define @provider(name={self.name!r}) in providers/{self.name}.py",
+                )
+            self._instance = self.factory(self)
+        return self._instance
 
 
 def resolve(cfg: ProviderConfig, root: Path) -> Resolution:
-    if cfg.mode == "fixture":
+    if cfg.mode == "replay":
         data_dir = root / (cfg.data or f"fixtures/{cfg.name}")
         if not data_dir.is_dir():
             raise ProviderError(
-                f"provider {cfg.name!r} is in fixture mode but {data_dir} does not exist"
+                f"provider {cfg.name!r} is in replay mode but {data_dir} does not exist"
             )
         factory = load_implementation(cfg.name, root)
-        return Resolution(cfg.name, "fixture", factory, cfg, root=root, data_dir=data_dir)
+        return Resolution(cfg.name, "replay", factory, cfg, root=root, data_dir=data_dir)
+
+    if cfg.mode not in ("live",):
+        raise ProviderError(
+            f"provider {cfg.name!r} has unknown mode {cfg.mode!r}",
+            hint="mode must be 'replay' or 'live'",
+        )
 
     secret = None
     if cfg.env:
@@ -116,24 +132,34 @@ def load_implementation(name: str, root: Path) -> Callable[[Resolution], Any] | 
     return fn
 
 
-def fixture_files(res: Resolution) -> dict[str, Any]:
-    """Load every JSON fixture under the provider's read-only seed directory."""
-    assert res.data_dir is not None
-    out: dict[str, Any] = {}
-    for f in sorted(res.data_dir.glob("*.json")):
-        out[f.stem] = json.loads(f.read_text())
-    return out
+def replay_data(res: Resolution) -> dict[str, Any]:
+    """Recorded HTTP exchanges, merged from the provider's fixture directory.
 
+    Each file is::
 
-def state_path(res: Resolution) -> Path:
-    """Where fixture-mode mutations persist.
-
-    Committed fixtures stay pristine seeds; applied effects land in
-    ``.scutch/state/<provider>.json`` so a workspace can show a real before and
-    after. Deleting ``.scutch/`` resets the demo without touching fixtures.
+        {"exchanges": [{"name": "...", "request": {"document": "...",
+                        "variables": {...}}, "response": {...}}, ...]}
     """
-    assert res.root is not None
-    return res.root / ".scutch" / "state" / f"{res.name}.json"
+    assert res.data_dir is not None
+    exchanges: list[dict[str, Any]] = []
+    # SCUTCH_REPLAY selects one recording. Merging every cassette in a directory
+    # would let unrelated scenarios' requests shadow each other.
+    selected = os.environ.get("SCUTCH_REPLAY")
+    files = [res.data_dir / f"{selected}.json"] if selected else sorted(res.data_dir.glob("*.json"))
+    for f in files:
+        if not f.is_file():
+            raise ProviderError(
+                f"no recording {selected!r} in {res.data_dir}",
+                hint="check the scenario's `Given the recording ...` name",
+            )
+        payload = json.loads(f.read_text())
+        exchanges.extend(payload.get("exchanges", []))
+    if not exchanges:
+        raise ProviderError(
+            f"provider {res.name!r} has no recorded exchanges in {res.data_dir}",
+            hint="record one with `scutch record`, or point data at another directory",
+        )
+    return {"exchanges": exchanges}
 
 
 def require(res: Resolution, ref: ProviderRef) -> None:

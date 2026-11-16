@@ -41,7 +41,12 @@ def workspace(tmp_path: Path) -> Path:
 
 @pytest.fixture()
 def shim(tmp_path: Path) -> Path:
-    """A PATH entry whose `scutch` is the real CLI entry point."""
+    """A PATH entry whose `scutch` is the real CLI entry point.
+
+    Every invocation appends its transport request log to a file, so scenarios
+    can assert on what would have crossed the wire. The log is written by the
+    child process, which is the only place that knows what it sent.
+    """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     exe = bin_dir / "scutch"
@@ -59,12 +64,26 @@ class Cli:
     def __init__(self, workspace: Path, shim: Path):
         self.workspace = workspace
         self.shim = shim
+        self.recording: str | None = None
         self.env = {
             **os.environ,
             "PATH": f"{shim}{os.pathsep}{os.environ['PATH']}",
             "PYTHONPATH": str(REPO),
             "COLUMNS": "120",
         }
+
+    @property
+    def wire_file(self) -> Path:
+        return self.workspace / ".scutch" / "wire.jsonl"
+
+    def drain_wire(self) -> list[dict]:
+        """Transport requests recorded by the CLI processes since last drain."""
+        path = self.wire_file
+        if not path.is_file():
+            return []
+        rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+        path.write_text("")
+        return rows
 
     def run(self, argv: list[str], stdin: dict | None = None) -> tuple[dict, int, str]:
         proc = subprocess.run(
@@ -73,7 +92,11 @@ class Cli:
             capture_output=True,
             text=True,
             cwd=self.workspace,
-            env=self.env,
+            env={
+                **self.env,
+                "SCUTCH_WIRE_LOG": str(self.wire_file),
+                **({"SCUTCH_REPLAY": self.recording} if self.recording else {}),
+            },
             timeout=120,
         )
         try:
@@ -89,3 +112,10 @@ class Cli:
 @pytest.fixture()
 def cli(workspace: Path, shim: Path) -> Cli:
     return Cli(workspace, shim)
+
+
+@pytest.fixture()
+def repair_world(cli: Cli) -> Cli:
+    """A workspace bound to the recorded repair session (cust_456 gains a grant)."""
+    cli.recording = "scenario-repair"
+    return cli
