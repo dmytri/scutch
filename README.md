@@ -143,6 +143,21 @@ docs/generated/           regenerated from descriptors — never hand-edited
 Deleting `.scutch/` removes history, applied fixture state and the idempotency
 cache. It never removes the information needed to formulate an invocation.
 
+## Agent skill
+
+The repo ships a [skills](https://github.com/vercel-labs/skills)-format skill so an
+agent can be taught the protocol rather than discovering it by trial:
+
+```bash
+npx skills add dmytri/scutch          # installs skills/scutch into your agent
+```
+
+It covers discovery, the envelope/continuation protocol, plan-digest approval,
+idempotency and recovery, and the authoring rules — with
+`skills/scutch/references/envelopes.md` as the full status/error reference.
+The skill is a *guide to the same contract*: it adds no capabilities, and
+`scutch describe` remains authoritative for any individual operation.
+
 ## Verification
 
 ```bash
