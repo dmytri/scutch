@@ -146,7 +146,7 @@ cache. It never removes the information needed to formulate an invocation.
 ## Verification
 
 ```bash
-pytest            # 56 tests: contract, lifecycle, Gherkin, TUI, acceptance
+pytest            # 58 tests: contract, lifecycle, Gherkin, TUI, acceptance
 scutch validate   # contracts and specs agree
 scutch doctor     # every documented capability is servable
 ```

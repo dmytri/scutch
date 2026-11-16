@@ -148,3 +148,29 @@ async def test_app_shows_run_history(ws):
         log = app.query_one("#log", textual.widgets.RichLog)
         rendered = "\n".join(line.text for line in log.lines)
         assert "saleor.customer.list" in rendered
+
+
+@pytest.mark.asyncio
+async def test_app_starts_on_a_usable_operation(ws):
+    """No dead initial state: the catalogue is populated and one card is open."""
+    app = ScutchApp(ws)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        lv = app.query_one("#ops", textual.widgets.ListView)
+        assert len(lv.children) == 3
+        assert app.current is not None
+        assert app.current.name == ws.registry.names()[0]
+        assert app.fields, "form was not generated for the initial operation"
+        assert app.query_one("#approve").disabled is True  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_selection_switches_the_form(ws):
+    app = ScutchApp(ws)
+    async with app.run_test() as pilot:
+        app.select_operation("saleor.customer.list")
+        await pilot.pause()
+        assert [f.name for f in app.fields] == ["limit"]
+        app.select_operation("saleor.customer.repair")
+        await pilot.pause()
+        assert [f.name for f in app.fields] == ["customer_id", "permission", "channel"]

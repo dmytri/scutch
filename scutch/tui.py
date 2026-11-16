@@ -350,5 +350,5 @@ else:  # pragma: no cover
 
     def run_app(ws) -> None:  # type: ignore[misc]
         raise SystemExit(
-            "textual is not installed: pip install 'scutch[tui]' or use the JSON interface"
+            "textual is not installed: pip install textual (or use the JSON interface)"
         )
