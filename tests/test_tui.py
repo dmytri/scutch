@@ -174,3 +174,54 @@ async def test_selection_switches_the_form(ws):
         app.select_operation("saleor.customer.repair")
         await pilot.pause()
         assert [f.name for f in app.fields] == ["customer_id", "permission", "channel"]
+
+
+@pytest.mark.asyncio
+async def test_app_cancels_a_plan_and_disables_approval(ws):
+    """Cancellation in the TUI is `scutch cancel` — same transition, not a discard."""
+    app = ScutchApp(ws)
+    async with app.run_test() as pilot:
+        app.select_operation("saleor.customer.repair")
+        await pilot.pause()
+        app.query_one(f"#{field_id('customer_id', app._form_generation)}").value = "cust_456"  # type: ignore[attr-defined]
+        app.query_one(f"#{field_id('permission', app._form_generation)}").value = "read_orders"  # type: ignore[attr-defined]
+        app.query_one("#idem").value = "ui-cancel"  # type: ignore[attr-defined]
+        await pilot.pause()
+
+        await pilot.press("r")
+        await pilot.pause()
+        assert app.pending_job is not None
+        digest = app.pending_approval
+        assert digest
+        assert not app.query_one("#cancel").disabled  # type: ignore[attr-defined]
+
+        await pilot.press("c")
+        await pilot.pause()
+        assert app.last_envelope is not None
+        assert app.last_envelope["status"] == "cancelled"
+        assert app.pending_approval is None
+        assert app.query_one("#approve").disabled  # type: ignore[attr-defined]
+        assert app.query_one("#cancel").disabled  # type: ignore[attr-defined]
+
+        # the digest is dead for the CLI too
+        from scutch.runner import execute
+
+        stale, _ = execute(
+            ws, "saleor.customer.repair",
+            {"customer_id": "cust_456", "permission": "read_orders", "channel": "retail"},
+            approve_plan=digest,
+        )
+        assert stale["status"] == "cancelled"
+        assert stale["error"]["code"] == "plan_cancelled"
+
+
+@pytest.mark.asyncio
+async def test_app_cannot_cancel_without_a_plan(ws):
+    app = ScutchApp(ws)
+    async with app.run_test() as pilot:
+        app.select_operation("saleor.customer.list")
+        await pilot.pause()
+        assert app.query_one("#cancel").disabled  # type: ignore[attr-defined]
+        app.action_cancel_plan()
+        await pilot.pause()
+        assert app.last_envelope is None

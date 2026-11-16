@@ -77,6 +77,15 @@ Feature: Customer permission repair
     And I follow the published next argv
     Then the envelope status is "complete"
     And the result status is "applied"
+
+  Scenario: A cancelled plan cannot be approved
+    Given customer "cust_456" is missing permission "read_orders" on channel "retail"
+    When I preview the permission repair
+    And I cancel the pending plan
+    And I approve the cancelled digest
+    Then the envelope status is "cancelled"
+    And the error code is "plan_cancelled"
+    And no mutation has happened
 ```
 
 ## Source

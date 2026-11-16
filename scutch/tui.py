@@ -16,6 +16,7 @@ import json
 from typing import Any
 
 from .contract import Operation
+from .runner import cancel as cancel_cmd
 from .runner import execute, status as status_cmd
 
 try:  # pragma: no cover - import-time capability probe
@@ -200,6 +201,7 @@ if HAVE_TUI:
         BINDINGS = [
             ("r", "run_operation", "Run / preview"),
             ("a", "approve", "Approve plan"),
+            ("c", "cancel_plan", "Cancel plan"),
             ("i", "inspect_runs", "Runs"),
             ("q", "quit", "Quit"),
         ]
@@ -211,6 +213,7 @@ if HAVE_TUI:
             self.fields: list[FormField] = []
             self.last_envelope: dict[str, Any] | None = None
             self.pending_approval: str | None = None
+            self.pending_job: str | None = None
             # Remounting a form reuses parameter names; a generation prefix
             # keeps widget ids unique without relying on deferred removal.
             self._form_generation = 0
@@ -231,6 +234,7 @@ if HAVE_TUI:
                     with Horizontal(id="actions"):
                         yield Button("Preview / run", id="run", variant="primary")
                         yield Button("Approve plan", id="approve", variant="warning", disabled=True)
+                        yield Button("Cancel plan", id="cancel", disabled=True)
                         yield Input(placeholder="idempotency key (optional)", id="idem")
                     yield RichLog(id="log", markup=False, wrap=True)
             yield Footer()
@@ -255,6 +259,7 @@ if HAVE_TUI:
                 return
             self.current = self.ws.registry.get(name)
             self.pending_approval = None
+            self.pending_job = None
             self.query_one("#card", Markdown).update(describe_card(self.current))
             self.fields = build_form(self.current)
             self._form_generation += 1
@@ -273,7 +278,7 @@ if HAVE_TUI:
                         id=field_id(f.name, self._form_generation),
                     )
                 )
-            self.query_one("#approve", Button).disabled = True
+            self._set_pending(None, None)
             self.query_one("#log", RichLog).clear()
 
         # -- actions -----------------------------------------------------
@@ -302,6 +307,24 @@ if HAVE_TUI:
                 return
             self._run(approve=self.pending_approval)
 
+        def action_cancel_plan(self) -> None:
+            """Cancel the pending plan. Same call the CLI's `scutch cancel` makes."""
+            if self.pending_job is None:
+                self._write("nothing to cancel: preview a plan first")
+                return
+            env, code = cancel_cmd(self.ws, self.pending_job, "json")
+            self.last_envelope = env
+            self._write(envelope_markdown(env))
+            self._set_pending(None, None)
+            if env["status"] == "cancelled":
+                self._write("plan cancelled — its digest can no longer be approved")
+
+        def _set_pending(self, digest: str | None, job: str | None) -> None:
+            self.pending_approval = digest
+            self.pending_job = job
+            self.query_one("#approve", Button).disabled = digest is None
+            self.query_one("#cancel", Button).disabled = digest is None
+
         def _run(self, approve: str | None) -> None:
             if self.current is None:
                 return
@@ -320,8 +343,10 @@ if HAVE_TUI:
             self.last_envelope = env
             self._write(envelope_markdown(env))
             needs = env["status"] == "needs_approval" and not env.get("error")
-            self.pending_approval = env["plan"]["digest"] if needs else None
-            self.query_one("#approve", Button).disabled = not needs
+            self._set_pending(
+                env["plan"]["digest"] if needs else None,
+                env.get("job_id") if needs else None,
+            )
             if env["status"] == "needs_approval" and not needs:
                 self._write("approval mismatch: nothing was applied. Approve the digest above.")
 

@@ -18,6 +18,7 @@ from . import discovery
 from .envelope import dumps
 from .errors import ScutchError, UsageError
 from .plan import Plan  # noqa: F401  (re-exported for operation modules)
+from .runner import cancel as runner_cancel
 from .runner import execute
 from .runner import status as runner_status
 from .workspace import load_workspace
@@ -218,6 +219,20 @@ def status_cmd(
     """Inspect a recorded run by job or run id."""
     try:
         payload, code = runner_status(_ws(), job_or_run, format)
+    except ScutchError as exc:
+        _fail(exc)
+    _emit(payload, format)
+    raise typer.Exit(code)
+
+
+@app.command("cancel")
+def cancel_cmd(
+    job_or_run: str = typer.Argument(..., help="Job or run id from a needs_approval envelope"),
+    format: str = typer.Option("json", "--format", "-f"),
+) -> None:
+    """Cancel a pending plan. Its digest becomes unusable; nothing was applied."""
+    try:
+        payload, code = runner_cancel(_ws(), job_or_run, format)
     except ScutchError as exc:
         _fail(exc)
     _emit(payload, format)

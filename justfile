@@ -59,6 +59,10 @@ customer-repair-apply customer_id permission channel approve_plan:
 status job:
     @scutch status {{job}} --format json
 
+# Cancel a pending plan (its digest stops being approvable; nothing was applied).
+cancel job:
+    @scutch cancel {{job}} --format json
+
 # Recent local runs.
 runs:
     @scutch runs --format json

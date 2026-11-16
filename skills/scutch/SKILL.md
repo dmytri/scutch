@@ -64,6 +64,7 @@ Always `kind: scutch.envelope/v1`. Branch on `status`:
 | `complete` | you're done; `result` is the projected answer, `next.argv` inspects the job |
 | `partial` | interrupted mid-apply — run `next.recommended` (`status`, then `recover`); **verify external state before repeating** |
 | `failed` | read `error.code` + `error.hint`, fix, retry the same invocation |
+| `cancelled` | the plan was cancelled (by you or a human); its digest is dead — re-preview for a new one |
 | `running` | poll `scutch status <job_id>` |
 
 An **empty** `plan.changes` means nothing will be mutated — that response is
@@ -79,6 +80,9 @@ ordered changes. Therefore:
 - If you get `approval_mismatch`, nothing was applied. The response contains the
   *current* digest — show the new plan and ask again. Do not retry the stale one.
 - Never approve a digest you did not receive from the runtime in this session.
+- Abandoning a plan is explicit: `scutch cancel <job_id>` (offered as
+  `next.cancel` on a `planned` status). Approving a cancelled digest returns
+  `plan_cancelled` — preview again rather than hunting for a workaround.
 
 ## Repetition
 

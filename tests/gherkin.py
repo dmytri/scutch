@@ -52,6 +52,7 @@ class Steps:
         self.channel: str = "retail"
         self.idem: str = "gherkin-fixed-key"
         self.env: dict = {}
+        self.cancelled_digest: str | None = None
 
     # -- helpers ---------------------------------------------------------
 
@@ -127,6 +128,21 @@ class Steps:
         """Repeat the caller's own invocation, with the same idempotency key."""
         assert self.customer and self.permission
         self.run_repair(self.customer, self.permission, self.channel)
+
+    def when_cancel_pending(self) -> None:
+        job = self.last.get("job_id")
+        assert job, "no job_id to cancel"
+        env, code, err = self.cli.scutch("cancel", job, "--format", "json")
+        assert env, f"no stdout; stderr={err}"
+        assert env["status"] == "cancelled", env.get("error")
+        self.cancelled_digest = self.last["plan"]["digest"]
+        self.envelopes.append(env)
+
+    def when_approve_cancelled_digest(self) -> None:
+        assert self.customer and self.permission
+        self.run_repair(
+            self.customer, self.permission, self.channel, approve=self.cancelled_digest
+        )
 
     def when_approve_digest(self, digest: str) -> None:
         assert self.customer and self.permission
@@ -288,6 +304,8 @@ PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r'^customer "([^"]+)" already has permission "([^"]+)" on channel "([^"]+)"$'), "given_customer_has"),
     (re.compile(r'^customer "([^"]+)" is missing permission "([^"]+)" on channel "([^"]+)"$'), "given_customer_missing"),
     (re.compile(r"^I preview the permission repair$"), "when_preview"),
+    (re.compile(r"^I cancel the pending plan$"), "when_cancel_pending"),
+    (re.compile(r"^I approve the cancelled digest$"), "when_approve_cancelled_digest"),
     (re.compile(r"^I follow the published next argv$"), "when_follow_next_argv"),
     (re.compile(r"^I repeat the original invocation unchanged$"), "when_repeat_invocation"),
     (re.compile(r'^I approve digest "([^"]+)"$'), "when_approve_digest"),

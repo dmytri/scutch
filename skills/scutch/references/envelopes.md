@@ -62,6 +62,19 @@ A replay lands here too, with `replay.mutation_requested: false`:
             "note": "this invocation already took effect; no new mutation was issued"}}
 ```
 
+### `cancelled`
+The plan was cancelled before approval, so nothing was applied and its digest is
+dead. Cancelling is the honest way to abandon a plan:
+
+```bash
+scutch cancel job_21073e24596b          # from next.cancel on a planned status
+```
+
+Approving that digest later returns `cancelled` with `error.code =
+"plan_cancelled"` (exit 10) and `next.argv` pointing at a fresh preview.
+Cancelling an applied consequence is refused with `already_applied` (exit 11);
+cancelling something with no pending plan is `not_cancellable` (exit 12).
+
 ### `partial`
 An apply was interrupted (process killed mid-flight). `next.recommended` holds
 `["scutch","status",job]` and `["scutch","recover",run]`. Verify the external
@@ -76,6 +89,9 @@ state before repeating anything.
 | `idempotency_conflict` | 9 | key reused with different inputs (`error.details.existing_input`) |
 | `in_flight` | 8 | identical invocation recorded but unfinished |
 | `approval_mismatch` | 5 | (status stays `needs_approval`) |
+| `plan_cancelled` | 10 | (status `cancelled`) the digest belonged to a cancelled plan |
+| `already_applied` | 11 | (status `complete`) cannot cancel what took effect |
+| `not_cancellable` | 12 | run has no pending plan |
 | `provider_not_configured` | 6 | provider missing from `scutch.toml` |
 | `provider_error` | 6 | provider resolution or call failed |
 | `not_found` | 3 | unknown operation or entity; `details` often lists valid ids |

@@ -194,3 +194,53 @@ def test_applying_a_plan_supersedes_its_preview(cli):
     assert old["superseded_by"] == applied["run_id"]
     assert old["next"]["argv"][:2] == ["scutch", "status"]
     assert old["next"]["argv"][2] == applied["run_id"]
+
+
+def test_cancel_kills_a_pending_plan_digest(cli):
+    """Cancellation must be a real transition, not a discarded envelope."""
+    payload = {"customer_id": "cust_456", "permission": "read_orders"}
+    preview, _, _ = cli.scutch(*REPAIR, "--input", "@-", stdin=payload)
+    assert preview["status"] == "needs_approval"
+    digest = preview["plan"]["digest"]
+
+    # status offers the cancel command for a pending plan
+    pending, _, _ = cli.scutch("status", preview["job_id"], "--format", "json")
+    assert pending["next"]["cancel"][:3] == ["scutch", "cancel", preview["job_id"]]
+
+    cancelled, code, _ = cli.scutch("cancel", preview["job_id"], "--format", "json")
+    assert cancelled["status"] == "cancelled"
+    assert code == 0
+
+    # the digest is now dead — and nothing was applied
+    stale, code2, _ = cli.scutch(*REPAIR, "--input", "@-", "--approve-plan", digest, stdin=payload)
+    assert stale["status"] == "cancelled"
+    assert stale["error"]["code"] == "plan_cancelled"
+    assert code2 == 10
+
+    runs = [json.loads(p.read_text()) for p in (cli.workspace / ".scutch" / "runs").glob("run_*.json")]
+    assert not [r for r in runs if r["phase"] == "applied"]
+
+    after, _, _ = cli.scutch("status", preview["job_id"], "--format", "json")
+    assert after["phase"] == "cancelled"
+
+
+def test_cancel_refuses_an_applied_plan(cli):
+    payload = {"customer_id": "cust_456", "permission": "read_orders"}
+    preview, _, _ = cli.scutch(*REPAIR, "--input", "@-", stdin=payload)
+    applied, _, _ = cli.scutch(
+        *REPAIR, "--input", "@-", "--idempotency-key", "c1",
+        "--approve-plan", preview["plan"]["digest"], stdin=payload,
+    )
+    assert applied["result"]["status"] == "applied"
+
+    refused, code, _ = cli.scutch("cancel", applied["job_id"], "--format", "json")
+    assert refused["status"] == "complete"
+    assert refused["error"]["code"] == "already_applied"
+    assert code == 11
+
+
+def test_cancel_requires_a_pending_plan(cli):
+    read, _, _ = cli.scutch("run", "saleor.customer.list", "--input", "@-", "--format", "json", stdin={})
+    refused, code, _ = cli.scutch("cancel", read["job_id"], "--format", "json")
+    assert refused["error"]["code"] == "not_cancellable"
+    assert code == 12

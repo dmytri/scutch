@@ -189,6 +189,26 @@ def execute(
         # Replay is an *explicit-key* promise. Without one, identical inputs are
         # simply a new invocation: it re-plans and observes current state.
         explicit = idempotency_key is not None or "_idempotency_key" in raw_input
+        for rec in store.recent(limit=None):
+            if rec.phase == "cancelled" and rec.plan_digest and rec.plan_digest == (approve_plan or ""):
+                return envelope(
+                    operation=op.name,
+                    status="cancelled",
+                    input=canonical,
+                    next={
+                        "argv": ["scutch", "run", op.name, "--input", "@-", "--format", fmt],
+                        "input": canonical,
+                        "note": "this plan was cancelled; preview again to get a fresh plan and digest",
+                    },
+                    run_id=rec.run_id,
+                    job_id=rec.job_id,
+                    error={
+                        "code": "plan_cancelled",
+                        "message": "the approved digest belongs to a cancelled plan",
+                        "details": {"cancelled_run": rec.run_id},
+                        "hint": "re-preview to obtain a new plan; nothing was applied",
+                    },
+                ), 10
         rec_applied = store.find_applied(fingerprint) if explicit else None
         if rec_applied is not None:
             replay = rec_applied.envelope or {}
@@ -517,6 +537,74 @@ def _stub_from_schema(schema: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def cancel(ws, job_or_run: str, fmt: str = "json") -> tuple[dict[str, Any], int]:
+    """Cancel a pending plan. Only plans that have not applied anything.
+
+    A cancelled plan can never be approved: its digest is dead. Nothing is
+    "rolled back", because a `needs_approval` envelope has not mutated anything.
+    """
+    store = RunStore(ws.runs_dir)
+    rec = store.find_job(job_or_run) or _load_or_none(store, job_or_run)
+    if rec is None:
+        raise NotFound(f"no run or job {job_or_run!r}", hint="run `scutch runs --format json`")
+
+    if rec.phase == "applied" and rec.plan_digest:
+        # A consequential run that already took effect: cancelling is too late,
+        # and Scutch will not pretend otherwise.
+        return envelope(
+            operation=rec.operation,
+            status="complete",
+            input=rec.input,
+            next={"argv": ["scutch", "status", rec.job_id, "--format", fmt], "input": rec.input},
+            run_id=rec.run_id,
+            job_id=rec.job_id,
+            error={
+                "code": "already_applied",
+                "message": "the plan already took effect; it cannot be cancelled",
+                "hint": "reverse it with the operation's inverse, if one exists",
+            },
+        ), 11
+    if rec.phase not in ("planned",):
+        return envelope(
+            operation=rec.operation,
+            status=rec.status,
+            input=rec.input,
+            next={"argv": ["scutch", "status", rec.job_id, "--format", fmt], "input": rec.input},
+            run_id=rec.run_id,
+            job_id=rec.job_id,
+            error={
+                "code": "not_cancellable",
+                "message": f"run is {rec.phase!r}, which has no pending plan",
+            },
+        ), 12
+
+    rec.status = "cancelled"
+    rec.phase = "cancelled"
+    rec.envelope = envelope(
+        operation=rec.operation,
+        status="cancelled",
+        input=rec.input,
+        plan=(rec.envelope or {}).get("plan"),
+        next={
+            "argv": ["scutch", "run", rec.operation, "--input", "@-", "--format", fmt],
+            "input": rec.input,
+            "note": "cancelled; nothing was applied. Run this to preview again.",
+        },
+        run_id=rec.run_id,
+        job_id=rec.job_id,
+        notes=["cancelled before approval; the plan digest is no longer valid"],
+    )
+    store.save(rec)
+    return rec.envelope, 0
+
+
+def _load_or_none(store: RunStore, run_id: str):
+    try:
+        return store.load(run_id)
+    except FileNotFoundError:
+        return None
+
+
 def status(ws, job_or_run: str, fmt: str = "json") -> tuple[dict[str, Any], int]:
     store = RunStore(ws.runs_dir)
     rec = store.find_job(job_or_run)
@@ -549,6 +637,12 @@ def status(ws, job_or_run: str, fmt: str = "json") -> tuple[dict[str, Any], int]
             "input": rec.input,
             "note": "this preview was applied; inspect the applied run instead",
         }
+    elif rec.phase == "cancelled":
+        body["next"] = {
+            "argv": ["scutch", "run", rec.operation, "--input", "@-", "--format", fmt],
+            "input": rec.input,
+            "note": "this plan was cancelled; nothing was applied",
+        }
     elif rec.phase == "planned":
         body["next"] = {
             "argv": ["scutch", "run", rec.operation, "--input", "@-", "--format", fmt,
@@ -556,6 +650,7 @@ def status(ws, job_or_run: str, fmt: str = "json") -> tuple[dict[str, Any], int]
             "input": rec.input,
             "plan_digest": rec.plan_digest,
             "note": "this plan is still pending; approving it applies exactly these changes",
+            "cancel": ["scutch", "cancel", rec.job_id, "--format", fmt],
         }
     else:
         body["next"] = {

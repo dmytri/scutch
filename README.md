@@ -90,6 +90,7 @@ Every response is an envelope. `status` is one of
 | `needs_approval` | run `next.argv` as given — it already carries `--approve-plan <digest>` |
 | `complete` | nothing; `next.argv` inspects the recorded job |
 | `partial` | `next.recommended` gives `status` and `recover` commands |
+| `cancelled` | `scutch cancel <job>` abandoned the plan; its digest is dead |
 | `failed` | fix the reported condition and retry the same invocation |
 
 There is no `scutch continue` and no opaque session token. Approvals are bound
@@ -161,7 +162,7 @@ The skill is a *guide to the same contract*: it adds no capabilities, and
 ## Verification
 
 ```bash
-pytest            # 58 tests: contract, lifecycle, Gherkin, TUI, acceptance
+pytest            # 71 tests: contract, lifecycle, Gherkin, TUI, acceptance
 scutch validate   # contracts and specs agree
 scutch doctor     # every documented capability is servable
 ```
