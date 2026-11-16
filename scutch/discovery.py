@@ -120,9 +120,18 @@ def doctor(ws) -> dict[str, Any]:
 
     prov = []
     for name, cfg in ws.providers.items():
-        if cfg.mode == "fixture":
-            ok = (ws.root / (cfg.data or f"fixtures/{name}")).is_dir()
-            prov.append({"provider": name, "mode": "fixture", "ok": ok})
+        if cfg.mode == "replay":
+            # Replay needs recorded exchanges, not a credential.
+            data_dir = ws.root / (cfg.data or f"fixtures/{name}")
+            cassettes = sorted(data_dir.glob("*.json")) if data_dir.is_dir() else []
+            prov.append(
+                {
+                    "provider": name,
+                    "mode": "replay",
+                    "ok": bool(cassettes),
+                    "cassettes": len(cassettes),
+                }
+            )
         else:
             import os
 
