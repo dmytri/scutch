@@ -1,0 +1,14 @@
+[workspace]
+name = "scutch-demo"
+description = "Example workspace: Saleor customer permissions."
+
+[providers.saleor]
+mode = "fixture"              # fixture | live
+data = "fixtures/saleor"
+env = "SCUTCH_SALEOR_TOKEN"   # used only in live mode
+notes = "https://saleor.example/graphql/"
+
+[policy]
+require_approval_for = ["plan_apply", "mutate"]
+runs_root = ".scutch/runs"
+artifacts_root = ".scutch/artifacts"

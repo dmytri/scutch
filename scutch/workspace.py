@@ -138,6 +138,11 @@ def load_workspace(root: Path | str | None = None) -> Workspace:
             notes=pcfg.get("notes", ""),
         )
 
+    # Operations import their providers as ordinary repository modules.
+    root_str = str(root)
+    if root_str not in sys.path:
+        sys.path.insert(0, root_str)
+
     # A fresh registry per workspace keeps tests isolated.
     registry = Registry()
     saved = _swap_registry(registry)

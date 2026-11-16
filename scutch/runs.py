@@ -47,6 +47,9 @@ class RunRecord:
     envelope: dict[str, Any] | None = None
     error: dict[str, Any] | None = None
     artifacts: list[str] = dataclasses.field(default_factory=list)
+    #: Set when a later run applied this plan, so an old preview cannot be
+    #: mistaken for a pending decision.
+    superseded_by: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         out = dataclasses.asdict(self)
@@ -100,6 +103,33 @@ class RunStore:
             except (json.JSONDecodeError, TypeError):
                 continue
         return out
+
+    def supersede_planned(self, plan_digest: str | None, applied_run_id: str) -> list[str]:
+        """Mark previews of this exact plan as decided. Returns affected run ids."""
+        if not plan_digest:
+            return []
+        affected = []
+        for rec in self.recent(limit=None):
+            if (
+                rec.plan_digest == plan_digest
+                and rec.phase == "planned"
+                and rec.run_id != applied_run_id
+                and rec.superseded_by is None
+            ):
+                rec.superseded_by = applied_run_id
+                rec.status = "complete"
+                rec.phase = "superseded"
+                rec.envelope = (rec.envelope or {}) | {
+                    "status": "complete",
+                    "next": {
+                        "argv": ["scutch", "status", applied_run_id, "--format", "json"],
+                        "input": rec.input,
+                        "note": f"this plan was applied by {applied_run_id}",
+                    },
+                }
+                self.save(rec)
+                affected.append(rec.run_id)
+        return affected
 
     # -- idempotency ------------------------------------------------------
 

@@ -37,6 +37,9 @@ class Plan:
     changes: list[Change] = dataclasses.field(default_factory=list)
     summary: str = ""
     digest: str | None = None
+    #: A read-path observation to return verbatim when there is nothing to do.
+    #: Must satisfy the operation's result schema; the runtime validates it.
+    no_change_result: Any = None
 
     def is_empty(self) -> bool:
         return not self.changes

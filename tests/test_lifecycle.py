@@ -166,3 +166,31 @@ def test_validate_agrees(cli):
     report, code, _ = cli.scutch("validate", "--format", "json")
     assert report["ok"]
     assert code == 0
+
+
+def test_status_of_a_pending_plan_returns_the_approval_command(cli):
+    """A preview's job id must not be a dead end."""
+    preview, _, _ = cli.scutch(*REPAIR, "--input", "@-", stdin={"customer_id": "cust_456", "permission": "read_orders"})
+    status, _, _ = cli.scutch("status", preview["job_id"], "--format", "json")
+    assert status["status"] == "needs_approval"
+    assert status["phase"] == "planned"
+    assert "--approve-plan" in status["next"]["argv"]
+    assert preview["plan"]["digest"] in status["next"]["argv"]
+    assert status["next"]["input"] == preview["next"]["input"]
+
+
+def test_applying_a_plan_supersedes_its_preview(cli):
+    payload = {"customer_id": "cust_456", "permission": "read_orders"}
+    preview, _, _ = cli.scutch(*REPAIR, "--input", "@-", stdin=payload)
+    applied, _, _ = cli.scutch(
+        *REPAIR, "--input", "@-", "--idempotency-key", "sup-1",
+        "--approve-plan", preview["plan"]["digest"], stdin=payload,
+    )
+    assert applied["result"]["status"] == "applied"
+    assert any(n.startswith("superseded_previews=") for n in applied["notes"])
+
+    old, _, _ = cli.scutch("status", preview["job_id"], "--format", "json")
+    assert old["phase"] == "superseded"
+    assert old["superseded_by"] == applied["run_id"]
+    assert old["next"]["argv"][:2] == ["scutch", "status"]
+    assert old["next"]["argv"][2] == applied["run_id"]

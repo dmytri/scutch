@@ -1,0 +1,11 @@
+# local run records, applied fixture state, artifacts — inspectable, not shared
+.scutch/
+# python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
