@@ -28,7 +28,15 @@ def _monthly(rows, field):
 
 
 def _pct(now, before):
-    return None if not before else round((now - before) / before * 100, 2)
+    """A percentage change, or None when there is nothing to compare against.
+
+    Cast to float: pandas values are numpy scalars, and a numpy float in the
+    report makes `json.dumps` either fail or emit a type the reader has to
+    explain. The report is the interface; it carries plain types.
+    """
+    if before in (None, 0):
+        return None
+    return round((float(now) - float(before)) / float(before) * 100, 2)
 
 
 def _forecast(series, steps):

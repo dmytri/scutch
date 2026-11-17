@@ -144,14 +144,6 @@ $ rm ledger.json                   # start over (the seed is untouched)
 Four orders: `ord_a1` and `ord_b1` are `placed`, `ord_a2` is `fulfilled`,
 `ord_c1` is `cancelled`. `orders.fulfil ord_a1` moves the first one.
 
-### There are no `.feature` files
-
-An earlier version of this repo ran Gherkin features as workflows. That layer is
-gone: an operation is a function, its tests are ordinary pytest tests in
-`tests/`, and the browser is the human interface. If you are looking for
-`specs/*.feature`, they were part of the design that was replaced — see the
-commit message on `62c20d2`.
-
 ## Non-goals
 
 No workflow engine, no scheduler, no durable execution. If a job needs
@@ -163,4 +155,74 @@ Python that happens to take `io`.
 ```console
 $ pip install -e '.[dev]'
 $ python -m pytest tests -q
+```### Credentials
+
+An operation asks for a secret **by name**; where the value comes from is decided
+in one place:
+
+```python
+api_key = io("secret", name="METABASE_API_KEY")
 ```
+
+```console
+$ export METABASE_API_KEY=...        # or: cmd:pass show metabase
+```
+
+| reference | resolves to |
+|---|---|
+| `NAME` or `env:NAME` | an environment variable |
+| `cmd:pass show metabase` | a command's stdout |
+| `file:~/.secrets/metabase` | a file's contents |
+
+A secret is **not an effect**, so it never reaches the plan, the digest, the
+review screen or a run record. It is also not resolved during a dry run — planning
+should not need credentials. A missing one fails with its *name*, and neither a
+failing command's output nor its text is echoed, because either can contain the
+value.
+
+### Queries are `.sql` files
+
+The window arithmetic lives in `operations/usage/queries/windows.sql`, and the
+operation *runs that file* rather than duplicating it:
+
+```console
+$ duckdb -json -c "SET VARIABLE orders='<rows json>'; $(cat operations/usage/queries/windows.sql)"
+[{"latest_month":"2026-04","latest_orders":8625,"mom_pct":-7.61,"qoq_pct":-3.63,
+  "yoy_pct":6.64,"ttm_orders":"89009","months":40}]
+```
+
+A number in the report can be reproduced without the Python, and a test asserts
+the report agrees with the file. A series too short for a window returns `NULL`,
+never an invented history.
+
+### Specs are checked
+
+Each operation has a `<name>.spec.yaml` beside it: the *intent*, the parameters,
+and the invariants that must not move.
+
+```yaml
+operation: usage.analyse
+intent: >
+  Answer the commercial question for one customer ...
+steps: [usage.metabase, usage.vercel]
+parameters:
+  customer:
+    description: The account to report on.
+invariants:
+  - id: no-zero-fill
+    says: a month present in one series and not the other is reported, never zero-filled
+    because: a zero looks like real usage that did not happen
+```
+
+`scutch check` requires one per operation and fails if a spec disagrees with the
+code — a documented parameter that does not exist, a required parameter left
+undocumented, or a workflow whose `steps` differ from what the code calls.
+
+```console
+$ scutch check
+{"operations": 7, "with_specs": 7, "problems": [], "ok": true}
+```
+
+### Observations are not effects
+
+

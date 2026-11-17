@@ -58,11 +58,13 @@ def resolve(reference: str) -> str:
     if kind == "cmd":
         done = subprocess.run(target, shell=True, capture_output=True, text=True)
         if done.returncode != 0:
-            # Note: stderr is *not* included. It can contain the secret.
+            # Neither stderr nor the command itself is shown: both can contain
+            # the secret, and a `cmd:curl -H "Authorization: Bearer xyz"` would
+            # put it in the error message.
             raise MissingSecret(
-                f"secret command failed: {target!r} exited {done.returncode}",
-                hint="check the command outside scutch; its stderr is not shown "
-                "because it can contain the secret",
+                f"secret command exited {done.returncode}",
+                hint="check the command outside scutch; its output and its text "
+                "are withheld because either can contain the secret",
             )
         return done.stdout.strip()
 

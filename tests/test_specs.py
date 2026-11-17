@@ -36,7 +36,14 @@ def test_a_spec_naming_the_wrong_operation_is_a_failure(tmp_path):
 def test_a_spec_documenting_a_parameter_that_does_not_exist_is_a_failure(tmp_path):
     shutil.copytree(REPO / "operations", tmp_path / "operations")
     spec = tmp_path / "operations" / "orders" / "list.spec.yaml"
-    spec.write_text(spec.read_text() + "\n  imaginary:\n    description: nope\n")
+    text = spec.read_text()
+    # Insert under `parameters:` rather than at the end of the file.
+    spec.write_text(
+        text.replace(
+            "parameters:\n",
+            "parameters:\n  imaginary:\n    description: nope\n",
+        )
+    )
     rows = specs.check(tmp_path)
     listed = next(r for r in rows if r["operation"] == "orders.list")
     assert any("do not exist" in p for p in listed["problems"])
