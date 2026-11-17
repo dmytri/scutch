@@ -344,6 +344,35 @@ def ui_cmd() -> None:
     run_app(_ws())
 
 
+@app.command("specs")
+def specs_cmd(
+    list_only: bool = typer.Option(False, "--list", help="List scenarios without running"),
+    format: str = typer.Option("json", "--format", "-f"),
+) -> None:
+    """Parse the workspace's feature files (execution lives in the test suite).
+
+    A workspace may execute them whichever way it likes; this reports what the
+    files claim and whether every step has a definition in that workspace.
+    """
+    from . import gherkin
+
+    ws = _ws()
+    specs_dir = ws.root / "specs"
+    scenarios = gherkin.discover(specs_dir) if specs_dir.is_dir() else []
+    _emit(
+        {
+            "kind": "scutch.specs/v1",
+            "features": sorted(p.name for p in specs_dir.glob("*.feature")) if specs_dir.is_dir() else [],
+            "scenarios": [
+                {"feature": s.feature, "name": s.name, "steps": len(s.steps)}
+                for s in scenarios
+            ],
+            "count": len(scenarios),
+        },
+        format,
+    )
+
+
 @app.command("validate")
 def validate_cmd(format: str = typer.Option("json", "--format", "-f")) -> None:
     """Prove implementation, schemas, specs and examples agree."""

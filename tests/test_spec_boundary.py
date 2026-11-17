@@ -42,7 +42,7 @@ def _scenario(name_fragment: str):
 
 def test_specs_catch_a_dropped_mutation(workspace, tmp_path):
     """The strongest claim: an apply that does nothing is caught by a scenario."""
-    from tests.gherkin import Steps, execute
+    from tests.gherkin import LIBRARY, Steps, execute
 
     ops = workspace / "operations" / "saleor" / "customer_repair.py"
     ops.write_text(
@@ -53,7 +53,7 @@ def test_specs_catch_a_dropped_mutation(workspace, tmp_path):
     cli = _harness(workspace, tmp_path)
     cli.recording = "scenario-repair"
     with pytest.raises(AssertionError):
-        execute(_scenario("documented variables"), Steps(cli))
+        execute(_scenario("documented variables"), Steps(cli), LIBRARY)
 
 
 def test_falsified_recorded_data_is_not_caught(tmp_path):
@@ -72,7 +72,7 @@ def test_falsified_recorded_data_is_not_caught(tmp_path):
     # The scenario's assertions are about status, changes and the wire — none of
     # them depend on the email — so a false recording passes. That is the point:
     # specs describe our workflow, not the API's data.
-    from tests.gherkin import Steps, execute, parse_feature
+    from tests.gherkin import LIBRARY, Steps, execute, parse_feature
     from tests.conftest import Cli
 
     shim = tmp_path / "bin"
@@ -87,7 +87,7 @@ def test_falsified_recorded_data_is_not_caught(tmp_path):
         s for s in parse_feature(REPO / "specs" / "api.customer_repair.feature")
         if "documented variables" in s.name
     ][0]
-    execute(scenario, Steps(cli))  # must not raise
+    execute(scenario, Steps(cli), LIBRARY)  # must not raise
 
 
 def test_recorded_response_error_is_surfaced(workspace, tmp_path):
@@ -145,7 +145,7 @@ def test_auth_header_is_not_asserted(workspace, tmp_path):
     provider.write_text(stripped)
 
     from tests.conftest import Cli
-    from tests.gherkin import Steps, execute, parse_feature
+    from tests.gherkin import LIBRARY, Steps, execute, parse_feature
     import sys
 
     shim = tmp_path / "bin"
@@ -158,4 +158,4 @@ def test_auth_header_is_not_asserted(workspace, tmp_path):
         s for s in parse_feature(REPO / "specs" / "api.customer_repair.feature")
         if "no credential appears" in " ".join(t for _, t in s.steps)
     ][0]
-    execute(scenario, Steps(cli))  # still passes: headers are invisible to replay
+    execute(scenario, Steps(cli), LIBRARY)  # still passes: headers are invisible to replay

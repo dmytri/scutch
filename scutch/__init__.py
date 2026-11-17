@@ -25,6 +25,7 @@ from .errors import (
     UsageError,
     ValidationError,
 )
+from .gherkin import Scenario, Step, execute, parse_feature, step
 from .plan import Change, Plan
 from .schema import Private, field, private
 from .runner import RunContext
@@ -35,6 +36,9 @@ __all__ = [
     "plan_for",
     "Plan",
     "Change",
+    "parse_feature",
+    "step",
+    "execute",
     "RunContext",
     "field",
     "private",

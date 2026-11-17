@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from .gherkin import Steps, execute, parse_feature
+from .gherkin import LIBRARY, Steps, execute, parse_feature
 
 SPECS = Path(__file__).resolve().parents[1] / "specs"
 
@@ -21,4 +21,4 @@ def scenarios():
 
 @pytest.mark.parametrize("scenario", scenarios())
 def test_gherkin(scenario, cli, workspace):
-    execute(scenario, Steps(cli))
+    execute(scenario, Steps(cli), LIBRARY)

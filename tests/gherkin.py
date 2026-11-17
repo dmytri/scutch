@@ -1,43 +1,27 @@
-"""A deliberately small Gherkin runner.
+"""Scutch's own step library, on top of the shared engine.
 
-Scenarios in ``specs/*.feature`` are executable: each step maps to a function
-here, and continuations are performed by running the published ``next.argv``
-through the real CLI. Unknown steps fail loudly — the suite cannot silently skip
-a documented behaviour.
+The parser and dispatcher live in ``scutch.gherkin`` because other workspaces
+(saleor-bi) execute their own feature files. Only the vocabulary is here.
 """
 
 from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
-from pathlib import Path
+from typing import Any
 
-
-@dataclass
-class Scenario:
-    feature: str
-    name: str
-    steps: list[tuple[str, str]] = field(default_factory=list)
-
-
-def parse_feature(path: Path) -> list[Scenario]:
-    scenarios: list[Scenario] = []
-    feature_name = path.stem
-    current: Scenario | None = None
-    for raw in path.read_text().splitlines():
-        line = raw.strip()
-        if line.startswith("Feature:"):
-            feature_name = line.split(":", 1)[1].strip()
-        elif line.startswith("Scenario:"):
-            current = Scenario(feature_name, line.split(":", 1)[1].strip())
-            scenarios.append(current)
-        elif re.match(r"^(Given|When|Then|And|But)\b", line):
-            if current is None:
-                raise ValueError(f"{path}: step outside a scenario: {line}")
-            keyword, text = line.split(" ", 1)
-            current.steps.append((keyword, text.strip()))
-    return scenarios
+from scutch.gherkin import (  # re-exported for tests/test_gherkin.py
+    Scenario,
+    UndefinedStep,
+    coverage,
+    discover,
+    execute,
+    named_values,
+    numbers,
+    parse_feature,
+    quoted,
+    step,
+)
 
 
 class Steps:
@@ -388,88 +372,62 @@ class Steps:
 
 
 # --------------------------------------------------------------------------
-# step dispatch
+# step vocabulary
 
-PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r'^the recording "([^"]+)"$'), "given_recording"),
-    (re.compile(r'^customer "([^"]+)" already has permission "([^"]+)" on channel "([^"]+)"$'), "given_customer_has"),
-    (re.compile(r'^customer "([^"]+)" is missing permission "([^"]+)" on channel "([^"]+)"$'), "given_customer_missing"),
-    (re.compile(r"^I preview the permission repair$"), "when_preview"),
-    (re.compile(r"^I cancel the pending plan$"), "when_cancel_pending"),
-    (re.compile(r"^I approve the cancelled digest$"), "when_approve_cancelled_digest"),
-    (re.compile(r"^I follow the published next argv$"), "when_follow_next_argv"),
-    (re.compile(r"^I repeat the original invocation unchanged$"), "when_repeat_invocation"),
-    (re.compile(r'^I approve digest "([^"]+)"$'), "when_approve_digest"),
-    (re.compile(r"^I run the permission repair with no customer$"), "when_run_no_customer"),
-    (re.compile(r"^the process restarts$"), "when_process_restarts"),
-    (re.compile(r"^I list customers$"), "when_list_customers"),
-    (re.compile(r'^I inspect customer "([^"]+)"$'), "when_inspect_customer"),
-    (re.compile(r'^the result lists "([^"]+)"$'), "then_result_lists"),
-    (re.compile(r"^the result has no restricted fields$"), "then_result_has_no_restricted_fields"),
-    (re.compile(r"^the envelope reports a redacted field$"), "then_reports_redacted_field"),
-    (re.compile(r'^the plan intends one mutation of kind "([^"]+)"$'), "then_plan_intends_one_mutation"),
-    (re.compile(r"^the request log holds no mutation$"), "then_request_log_holds_no_mutation"),
-    (re.compile(r'^the request log holds a read of "([^"]+)"$'), "then_request_log_holds_read_of"),
-    (re.compile(r"^the request log holds exactly (\d+) mutation$"), "then_request_log_holds_exactly"),
-    (re.compile(r'^that mutation calls "([^"]+)"$'), "then_mutation_calls"),
-    (re.compile(r"^that mutation sends (.+)$"), "then_mutation_sends"),
-    (re.compile(r"^no credential appears in the recorded exchanges$"), "then_no_credential_in_exchanges"),
-    (re.compile(r"^the hint says to re-record the fixture$"), "then_hint_says_rerecord"),
-    (re.compile(r"^I request an operation whose query is not recorded$"), "when_request_unrecorded"),
-    (re.compile(r"^the envelope withholds nothing$"), "then_withholds_nothing"),
-    (re.compile(r"^I ask for the workspace context$"), "when_context"),
-    (re.compile(r'^I describe "([^"]+)"$'), "when_describe"),
-    (re.compile(r'^the envelope status is "([^"]+)"$'), "then_envelope_status"),
-    (re.compile(r'^the result status is "([^"]+)"$'), "then_result_status"),
-    (re.compile(r"^no approval is required$"), "then_no_approval_required"),
-    (re.compile(r"^no mutation is requested$"), "then_no_mutation_requested"),
-    (re.compile(r"^no mutation has happened$"), "then_no_mutation_happened"),
-    (re.compile(r"^there is exactly one change$"), "then_exactly_one_change"),
-    (re.compile(r'^the change kind is "([^"]+)"$'), "then_change_kind"),
-    (re.compile(r"^the next argv approves the returned digest$"), "then_next_approves_digest"),
-    (re.compile(r"^the second response reports a replay$"), "then_replay_reported"),
-    (re.compile(r'^the customer holds exactly one "([^"]+)" permission on "([^"]+)"$'), "then_customer_holds_exactly"),
-    (re.compile(r'^the error code is "([^"]+)"$'), "then_error_code"),
-    (re.compile(r'^the error lists "([^"]+)" as missing$'), "then_error_lists_missing"),
-    (re.compile(r"^the next block carries canonical inputs and an argv$"), "then_next_carries_canonical"),
-    (re.compile(r"^the bootstrap forbids requesting credential values$"), "then_bootstrap_forbids_credentials"),
-    (re.compile(r'^the catalogue lists "([^"]+)"$'), "then_catalogue_lists"),
-    (re.compile(r'^the policy requires approval for "([^"]+)"$'), "then_policy_requires_approval"),
-    (re.compile(r'^it declares effect "([^"]+)"$'), "then_declares_effect"),
-    (re.compile(r'^its credentials name only the provider handle "([^"]+)"$'), "then_credentials_handle_only"),
-    (re.compile(r"^its input schema requires (.+)$"), "then_input_schema_requires"),
-    (re.compile(r"^its idempotency key covers (.+)$"), "then_idempotency_covers"),
-    (re.compile(r"^its source is the implementing module$"), "then_source_is_module"),
-    (re.compile(r'^the intended effects name "([^"]+)"$'), "then_intended_effects_name"),
-    (re.compile(r'^the external reads name "([^"]+)"$'), "then_external_reads_name"),
+LIBRARY = [
+    step(r'the recording "([^"]+)"', "given_recording"),
+    step(r'customer "([^"]+)" already has permission "([^"]+)" on channel "([^"]+)"', "given_customer_has"),
+    step(r'customer "([^"]+)" is missing permission "([^"]+)" on channel "([^"]+)"', "given_customer_missing"),
+    step(r"I preview the permission repair", "when_preview"),
+    step(r"I follow the published next argv", "when_follow_next_argv"),
+    step(r"I repeat the original invocation unchanged", "when_repeat_invocation"),
+    step(r"I cancel the pending plan", "when_cancel_pending"),
+    step(r"I approve the cancelled digest", "when_approve_cancelled_digest"),
+    step(r'I approve digest "([^"]+)"', "when_approve_digest"),
+    step(r"I run the permission repair with no customer", "when_run_no_customer"),
+    step(r"the process restarts", "when_process_restarts"),
+    step(r"I ask for the workspace context", "when_context"),
+    step(r"I list customers", "when_list_customers"),
+    step(r'I inspect customer "([^"]+)"', "when_inspect_customer"),
+    step(r"I request an operation whose query is not recorded", "when_request_unrecorded"),
+    step(r'I describe "([^"]+)"', "when_describe"),
+    step(r'the envelope status is "([^"]+)"', "then_envelope_status"),
+    step(r'the result status is "([^"]+)"', "then_result_status"),
+    step(r"no approval is required", "then_no_approval_required"),
+    step(r"no mutation is requested", "then_no_mutation_requested"),
+    step(r"no mutation has happened", "then_no_mutation_happened"),
+    step(r"there is exactly one change", "then_exactly_one_change"),
+    step(r'the change kind is "([^"]+)"', "then_change_kind"),
+    step(r"the next argv approves the returned digest", "then_next_approves_digest"),
+    step(r"the second response reports a replay", "then_replay_reported"),
+    step(r'the customer holds exactly one "([^"]+)" permission on "([^"]+)"', "then_customer_holds_exactly"),
+    step(r'the error code is "([^"]+)"', "then_error_code"),
+    step(r'the error lists "([^"]+)" as missing', "then_error_lists_missing"),
+    step(r"the next block carries canonical inputs and an argv", "then_next_carries_canonical"),
+    step(r"the bootstrap forbids requesting credential values", "then_bootstrap_forbids_credentials"),
+    step(r'the catalogue lists "([^"]+)"', "then_catalogue_lists"),
+    step(r'the policy requires approval for "([^"]+)"', "then_policy_requires_approval"),
+    step(r'it declares effect "([^"]+)"', "then_declares_effect"),
+    step(r'its credentials name only the provider handle "([^"]+)"', "then_credentials_handle_only"),
+    step(r"its input schema requires (.+)", "then_input_schema_requires", extract=quoted),
+    step(r"its idempotency key covers (.+)", "then_idempotency_covers", extract=quoted),
+    step(r"its source is the implementing module", "then_source_is_module"),
+    step(r'the intended effects name "([^"]+)"', "then_intended_effects_name"),
+    step(r'the external reads name "([^"]+)"', "then_external_reads_name"),
+    step(r'the result lists "([^"]+)"', "then_result_lists"),
+    step(r"the result has no restricted fields", "then_result_has_no_restricted_fields"),
+    step(r"the envelope reports a redacted field", "then_reports_redacted_field"),
+    step(r"the envelope withholds nothing", "then_withholds_nothing"),
+    step(r'the plan intends one mutation of kind "([^"]+)"', "then_plan_intends_one_mutation"),
+    step(r"the request log holds no mutation", "then_request_log_holds_no_mutation"),
+    step(r'the request log holds a read of "([^"]+)"', "then_request_log_holds_read_of"),
+    step(r"the request log holds exactly (\d+) mutation", "then_request_log_holds_exactly"),
+    step(r'that mutation calls "([^"]+)"', "then_mutation_calls"),
+    step(r"that mutation sends (.+)", "then_mutation_sends", extract=named_values),
+    step(r"no credential appears in the recorded exchanges", "then_no_credential_in_exchanges"),
+    step(r"the hint says to re-record the fixture", "then_hint_says_rerecord"),
 ]
 
 
-def split_list(text: str) -> tuple[str, ...]:
-    return tuple(re.findall(r'"([^"]+)"', text))
-
-
-def _var_pairs(text: str) -> tuple[tuple[str, str], ...]:
-    """`id "x", channel "y" and permission "z"` -> (("id","x"), ...)."""
-    names = re.findall(r'(\w+) "', text)
-    values = re.findall(r'"([^"]+)"', text)
-    assert len(names) == len(values), text
-    return tuple(zip(names, values))
-
-
-def execute(scenario: Scenario, steps: Steps) -> None:
-    for keyword, text in scenario.steps:
-        for pattern, method in PATTERNS:
-            m = pattern.match(text)
-            if not m:
-                continue
-            fn = getattr(steps, method)
-            if method in ("then_input_schema_requires", "then_idempotency_covers"):
-                fn(*split_list(text))
-            elif method == "then_mutation_sends":
-                fn(*_var_pairs(text))
-            else:
-                fn(*m.groups())
-            break
-        else:
-            raise AssertionError(f"undefined step: {keyword} {text}")
+def library() -> list:
+    return LIBRARY
