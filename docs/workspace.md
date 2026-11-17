@@ -168,6 +168,31 @@ customer-repair customer_id permission channel="retail":
       --input '{"customer_id":"{{customer_id}}","permission":"{{permission}}","channel":"{{channel}}"}'
 ```
 
+## What a feature proves — and what it does not
+
+A feature file is **executable documentation of the workflow**: it states, in
+the same terms a human or an agent would use, what the operation will do to the
+outside world and how the caller continues. It is self-description that fails
+when the implementation drifts.
+
+It is **not** a test of the files, commands or APIs underneath. Measured
+boundaries, so this stays honest:
+
+| change | do specs catch it? |
+|---|---|
+| the operation stops calling the mutation | **yes** — the wire assertion drops to 0 |
+| the plan reports a change when none is needed | **yes** — the `no_change` scenario fails |
+| the GraphQL document is mistyped | **yes** — replay refuses the unknown request |
+| a recorded response claims the API refused | **yes** (request shape unchanged, error mapping exercised) |
+| recorded *data* is wrong but decisions don't depend on it | **no** — e.g. every email falsified, 19/19 pass |
+| the API stops requiring auth | **no** — the header is not part of any assertion |
+| the API's real limits, partial failures, eventual consistency | **no** — a recording has none of them |
+
+So: specs assert **what our workflow does and how**, against a recorded
+environment. Whether the *real* service behaves as recorded is a different
+claim, verified only by recording against a live endpoint and reviewing the
+diff.
+
 ## Tests
 
 Layer confidence; don't collapse it.
@@ -175,11 +200,12 @@ Layer confidence; don't collapse it.
 1. **Schema validation** — invocation and projected results
    (`tests/test_contract.py`).
 2. **Unit tests** — ordinary operation behaviour.
-3. **Fixture-backed contract tests** — external API assumptions; the seller is
-   `fixtures/`, plus the provider's own adapter.
+3. **Replay-backed contract tests** — the request *shape* (document text,
+   variables) against `fixtures/`, which is what makes a dry run meaningful.
+   Not a test of the API's behaviour.
 4. **Idempotency and retry tests** — `tests/test_lifecycle.py`.
 5. **Redaction tests** — credentials and private fields stay outside envelopes.
-6. **Gherkin scenarios** — `tests/gherkin.py`.
+6. **Gherkin scenarios** — `tests/gherkin.py`: the workflow, stated and executed.
 
 ## Generated docs
 

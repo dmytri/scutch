@@ -130,7 +130,11 @@ def plan_action(customer_id: CustomerId, *, api) -> Plan: ...
 - Keep the read path (`@plan_for`) separate from the write path. An empty plan
   is a first-class "nothing to do" outcome — return `no_change_result` with your
   observation.
-- Add a Gherkin scenario in `specs/`. Specs are executed, not decorative.
+- Add a Gherkin scenario in `specs/`. Specs are executed, not decorative, and
+  they describe the workflow against a recorded environment: say what will be
+  sent, not only what status came back. A passing scenario is **not** evidence
+  the real API behaves as recorded — it is evidence your workflow is what you
+  say it is.
 - Run `scutch validate` and `scutch doctor` before reporting done.
 
 Authoring conventions in full: `docs/workspace.md` and `CONTRIBUTING.md`.

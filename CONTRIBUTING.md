@@ -10,7 +10,7 @@ without relying on any previous conversation.
 python -m venv .venv && . .venv/bin/activate
 pip install -e . pytest pytest-asyncio
 just doctor    # is every documented capability servable?
-just test      # 76 tests, ~15s
+just test      # 80 tests, ~15s
 ```
 
 ## Adding an operation
@@ -24,6 +24,11 @@ just test      # 76 tests, ~15s
    the no-change case.
 4. Write the Gherkin scenarios in `specs/`. They are executed, not decorative.
    A scenario that documents a continuation must follow `next.argv`.
+   Say what the operation does *to the outside world* ("sends exactly one
+   mutation calling X with these variables"), not just that it returned a
+   status — that is what makes a dry run meaningful. A scenario is a statement
+   about your workflow against a recorded environment; it is not evidence the
+   real API behaves as recorded.
 5. Run `just validate` and `just doctor`.
 6. Add a `just` alias only if a human will type it repeatedly. The alias builds
    a canonical invocation and nothing more.

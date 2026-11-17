@@ -191,10 +191,23 @@ Consequences worth knowing:
 What replay cannot prove: rate limits, partial failures, eventual consistency,
 auth expiry. Those need a live sandbox run.
 
+## What the specs prove
+
+A feature states what the workflow *does to the outside world* and how the
+caller continues. It fails when that drifts — a dropped mutation, a plan that
+claims work it will not do, a mistyped query.
+
+It does not verify the API underneath. Measured: falsifying every recorded email
+passes 19/19 scenarios; removing the `Authorization` header passes too. Specs
+assert the workflow against a recorded environment, not the service's real
+behaviour — that needs a live recording and a reviewed diff.
+
+See [`docs/workspace.md`](docs/workspace.md#what-a-feature-proves--and-what-it-does-not).
+
 ## Verification
 
 ```bash
-pytest            # 76 tests: contract, lifecycle, Gherkin, TUI, acceptance
+pytest            # 80 tests: contract, lifecycle, Gherkin, TUI, acceptance
 scutch validate   # contracts and specs agree
 scutch doctor     # every documented capability is servable
 ```
