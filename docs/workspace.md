@@ -207,6 +207,28 @@ Layer confidence; don't collapse it.
 5. **Redaction tests** — credentials and private fields stay outside envelopes.
 6. **Gherkin scenarios** — `tests/gherkin.py`: the workflow, stated and executed.
 
+## Executing a workspace's features
+
+The parser and dispatcher live in `scutch.gherkin`; a workspace supplies its own
+step vocabulary. Nothing is copied between repositories:
+
+```python
+from scutch.gherkin import coverage, discover, execute, step
+
+LIB = [step(r"I check the contracts", "when_check_contracts")]
+
+def test_every_step_is_defined():
+    assert not coverage(discover("specs"), LIB)
+
+@pytest.mark.parametrize("scenario", discover("specs"), ids=lambda s: s.name)
+def test_scenario(scenario):
+    execute(scenario, Steps(), LIB)
+```
+
+`coverage()` is the important half: a scenario whose steps are unimplemented
+fails the suite instead of being silently skipped, so a feature cannot claim
+behaviour nobody executes.
+
 ## Generated docs
 
 ```bash
