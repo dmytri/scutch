@@ -344,6 +344,110 @@ def ui_cmd() -> None:
     run_app(_ws())
 
 
+@app.command("new")
+def new_cmd(
+    kind: str = typer.Argument(..., help="operation | feature"),
+    name: str = typer.Argument(..., help="Dotted name, e.g. saleor.grist.master.write"),
+    effect: str = typer.Option("read", "--effect", help="read | plan_apply | mutate"),
+    query: bool = typer.Option(False, "--query", help="This operation computes over data: scaffold a .sql file"),
+    domain: str | None = typer.Option(None, "--domain", help="Feature folder (defaults to the name's first segment)"),
+    format: str = typer.Option("json", "--format", "-f"),
+) -> None:
+    """Scaffold a compliant operation or feature.
+
+    The point is that the *shape* is decided here, not by the author: the
+    decorator, the query file, the plan stub and the feature skeleton all come
+    from the conventions declared in scutch.toml. An agent fills in bodies; it
+    does not have to remember the rules, and `doctor` will catch it if it
+    deviates.
+    """
+    from .scaffold import scaffold_feature, scaffold_operation
+
+    ws = _ws()
+    try:
+        if kind == "operation":
+            written = scaffold_operation(ws, name, effect=effect, query=query)
+        elif kind == "feature":
+            written = scaffold_feature(ws, name, domain=domain)
+        else:
+            raise UsageError(f"unknown kind {kind!r}", hint="use `operation` or `feature`")
+    except ScutchError as exc:
+        _fail(exc)
+    _emit(
+        {
+            "kind": "scutch.new/v1",
+            "scaffolded": kind,
+            "name": name,
+            "written": [str(p.relative_to(ws.root)) for p in written],
+            "next": [
+                "fill in the bodies",
+                "scutch doctor",
+                f"scutch workflow {domain or name.split('.')[0]}",
+            ],
+        },
+        format,
+    )
+
+
+@app.command("workflow")
+def workflow_cmd(
+    feature: str = typer.Argument(..., help="Feature file or a name within specs/"),
+    list_only: bool = typer.Option(False, "--list", help="Show the steps without running them"),
+    keep_going: bool = typer.Option(False, "--keep-going", help="Diagnose a suite; a real run stops"),
+    format: str = typer.Option("json", "--format", "-f"),
+) -> None:
+    """Run a feature as a workflow: scenarios in order, stop on failure."""
+    from . import gherkin as g
+    from .harness import LocalHarness
+    from .steps import LIBRARY, Steps
+
+    ws = _ws()
+    specs_dir = ws.root / ws.conventions.features_root
+    candidate = Path(feature)
+    if not candidate.is_file():
+        matches = sorted(specs_dir.rglob(f"*{feature}*")) if specs_dir.is_dir() else []
+        matches = [m for m in matches if m.suffix == ".feature"]
+        exact = [m for m in matches if m.stem == feature]
+        # An exact stem match wins outright: `customer_repair` means that file,
+        # not `api_customer_repair`. Otherwise ambiguity is refused, because
+        # running the wrong workflow is worse than making the caller be precise.
+        if len(exact) == 1:
+            candidate = exact[0]
+        elif not matches:
+            _fail(UsageError(f"no feature {feature!r} in {specs_dir}"))
+        else:
+            _fail(
+                UsageError(
+                    f"ambiguous feature {feature!r}",
+                    hint="candidates: "
+                    + str([str(m.relative_to(specs_dir)) for m in matches]),
+                )
+            )
+
+    scenarios = g.parse_feature(candidate)
+    if list_only:
+        _emit(
+            {
+                "kind": "scutch.workflow/v1",
+                "path": str(candidate.resolve().relative_to(ws.root))
+                if candidate.resolve().is_relative_to(ws.root)
+                else str(candidate),
+                "scenarios": [{"name": s.name, "steps": len(s.steps)} for s in scenarios],
+                "count": len(scenarios),
+            },
+            format,
+        )
+        return
+
+    harness = LocalHarness(ws)
+    run = g.run_feature(scenarios, Steps(harness), LIBRARY, keep_going=keep_going)
+    resolved = candidate.resolve()
+    display = str(resolved.relative_to(ws.root)) if resolved.is_relative_to(ws.root) else str(resolved)
+    payload = run.to_json() | {"kind": "scutch.workflow/v1", "path": display}
+    _emit(payload, format)
+    raise typer.Exit(0 if run.ok else 1)
+
+
 @app.command("specs")
 def specs_cmd(
     list_only: bool = typer.Option(False, "--list", help="List scenarios without running"),
@@ -373,143 +477,54 @@ def specs_cmd(
     )
 
 
-@app.command("workflow")
-def workflow_cmd(
-    feature: str = typer.Argument(..., help="Feature file, or a name under specs/"),
-    list_only: bool = typer.Option(False, "--list", help="Show the scenarios without running"),
-    keep_going: bool = typer.Option(False, "--keep-going", help="Diagnosis only: do not stop at the first failure"),
+@app.command("new")
+def new_cmd(
+    kind: str = typer.Argument(..., help="operation | feature"),
+    name: str = typer.Argument(..., help="Dotted name, e.g. saleor.grist.master.write"),
+    effect: str = typer.Option("read", "--effect", help="read | plan_apply | mutate"),
+    query: bool = typer.Option(False, "--query", help="This operation computes over data: scaffold a .sql file"),
+    domain: str | None = typer.Option(None, "--domain", help="Feature folder (defaults to the name's first segment)"),
     format: str = typer.Option("json", "--format", "-f"),
 ) -> None:
-    """Run a feature as a workflow: steps in order, stop at the first failure.
+    """Scaffold a compliant operation or feature.
 
-    A feature *is* the workflow. Its scenarios are its steps, and they share one
-    run, so a later step sees what an earlier one did. Every provider must be
-    doubled: a feature run never reaches the network.
+    The point is that the *shape* is decided here, not by the author: the
+    decorator, the query file, the plan stub and the feature skeleton all come
+    from the conventions declared in scutch.toml. An agent fills in bodies; it
+    does not have to remember the rules, and `doctor` will catch it if it
+    deviates.
     """
-    from . import gherkin
-    from .steps import LIBRARY, Steps, InProcessHarness
-
-    ws = _ws()
-    root = ws.features_dir
-    candidate = (ws.root / feature).resolve() if not Path(feature).is_absolute() else Path(feature)
-    if not candidate.is_file():
-        candidate = root / feature
-        if not candidate.suffix:
-            candidate = candidate.with_suffix(".feature")
-    if not candidate.is_file():
-        matches = sorted(root.rglob(f"*{feature}*.feature")) if root.is_dir() else []
-        if len(matches) != 1:
-            _fail(UsageError(
-                f"no feature {feature!r}",
-                hint=f"candidates: {[str(m.relative_to(root)) for m in matches]}" if matches else f"see {root}",
-            ))
-        candidate = matches[0]
-
-    scenarios = gherkin.parse_feature(candidate)
-    if list_only:
-        _emit(
-            {
-                "kind": "scutch.workflow/v1",
-                "feature": str(candidate.relative_to(ws.root)),
-                "scenarios": [s.name for s in scenarios],
-                "count": len(scenarios),
-            },
-            format,
-        )
-        return
-
-    harness = InProcessHarness(ws)
-    run = gherkin.run_feature(scenarios, Steps(harness), LIBRARY, keep_going=keep_going)
-    report = {
-        "kind": "scutch.workflow/v1",
-        "feature": str(candidate.relative_to(ws.root)),
-        **run.to_json(),
-    }
-    _emit(report, format)
-    raise typer.Exit(0 if run.ok else 1)
-
-
-@app.command("verify")
-def verify_cmd(
-    operation: str = typer.Argument(..., help="Operation to prove reproducible"),
-    input: str | None = typer.Option(None, "--input", "-i"),
-    runs: int = typer.Option(2, "--runs", min=2, max=10),
-    format: str = typer.Option("json", "--format", "-f"),
-) -> None:
-    """Prove an operation returns the same envelope for the same input.
-
-    Executes the operation `--runs` times in one process and compares the
-    reproducible part of each envelope (everything except run_id and timing).
-    A workflow step's stdout can only be diffed, hashed or cached if this holds.
-    """
-    from .envelope import canonical, digest
+    from .scaffold import scaffold_feature, scaffold_operation
 
     ws = _ws()
     try:
-        payload = _read_input(input)
+        if kind == "operation":
+            written = scaffold_operation(ws, name, effect=effect, query=query)
+        elif kind == "feature":
+            written = scaffold_feature(ws, name, domain=domain)
+        else:
+            raise UsageError(f"unknown kind {kind!r}", hint="use `operation` or `feature`")
     except ScutchError as exc:
         _fail(exc)
-
-    seen: list[dict[str, Any]] = []
-    codes: list[int] = []
-    for _ in range(runs):
-        env, code = execute(ws, operation, payload, fmt=format)
-        seen.append(env)
-        codes.append(code)
-
-    digests = [digest(e) for e in seen]
-    same = len(set(digests)) == 1
-    drift: dict[str, Any] = {}
-    if not same:
-        base = canonical(seen[0])
-        for i, env in enumerate(seen[1:], start=1):
-            other = canonical(env)
-            for key in sorted(set(base) | set(other)):
-                if base.get(key) != other.get(key):
-                    drift.setdefault(key, []).append({"run": i, "value": other.get(key)})
-
-    report: dict[str, Any] = {
-        "kind": "scutch.verify/v1",
-        "operation": operation,
-        "input": seen[0].get("input") if seen else payload,
-        "status": seen[0].get("status") if seen else None,
-        "runs": runs,
-        "reproducible": same,
-        "envelope_digest": digests[0] if same else None,
-        "exit_codes": sorted(set(codes)),
-    }
-    if not same:
-        report["drifts"] = drift
-        report["digests"] = digests
-    _emit(report, format)
-    raise typer.Exit(0 if same else 1)
-
-
-@app.command("validate")
-def validate_cmd(format: str = typer.Option("json", "--format", "-f")) -> None:
-    """Prove implementation, schemas, specs and examples agree."""
-    ws = _ws()
-    problems = {n: p for n, p in ws.registry.validate_all().items() if p}
-    spec_problems: dict[str, list[str]] = {}
-    for op in ws.registry.all():
-        if discovery.spec_for(ws, op) is None:
-            spec_problems[op.name] = ["missing spec"]
-    ok = not problems and not spec_problems
     _emit(
         {
-            "kind": "scutch.validate/v1",
-            "ok": ok,
-            "operations": len(ws.registry.all()),
-            "contract_problems": problems,
-            "spec_problems": spec_problems,
+            "kind": "scutch.new/v1",
+            "scaffolded": kind,
+            "name": name,
+            "written": [str(p.relative_to(ws.root)) for p in written],
+            "next": [
+                "fill in the bodies",
+                "scutch doctor",
+                f"scutch workflow {domain or name.split('.')[0]}",
+            ],
         },
         format,
     )
-    raise typer.Exit(0 if ok else 1)
+
 
 
 def _entry() -> None:
-    """Console-script entry point. ``main`` is the Typer *callback*, not the app."""
+    """Console-script entry point. ``main`` is the Typer callback, not the app."""
     app()
 
 

@@ -371,3 +371,30 @@ def check_conventions(ws, check) -> None:
             if (unclaimed or flat)
             else f"{len(features)} feature(s), every operation claimed",
         )
+
+    # Scaffolding is deliberately incomplete, and must stay visibly so: a TODO
+    # body or a NotImplementedError is not an operation, and shipping one would
+    # make "compliant by default" a lie.
+    ops_dir = ws.root / "operations"
+    unfinished = []
+    if ops_dir.is_dir():
+        for path in sorted(ops_dir.rglob("*.py")):
+            text = path.read_text()
+            if "raise NotImplementedError" in text or "TODO:" in text:
+                unfinished.append(str(path.relative_to(ws.root)))
+    check(
+        "no_unfinished_scaffolds",
+        not unfinished,
+        unfinished or "no TODO bodies or NotImplementedError",
+    )
+
+    # A feature run must not be able to reach the network: every provider in the
+    # workspace has to be replayable, or the feature is not a dry run.
+    undoubled = sorted(
+        name for name, cfg in ws.providers.items() if cfg.mode != "replay"
+    )
+    check(
+        "doubles_mandatory",
+        not undoubled,
+        {"undoubled_providers": undoubled} if undoubled else "every provider is replayable",
+    )

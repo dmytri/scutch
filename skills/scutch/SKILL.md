@@ -65,8 +65,8 @@ is not about the source data: a query returning different rows tomorrow is a new
 input, not nondeterminism. Pin the inputs (an `as_of`, a window, a cost budget)
 and the decision over them stays reproducible.
 
-Check it with `scutch verify NAME --input '<json>'`. If you add a field that
-carries a clock, a counter or a random id, this is what will fail.
+`scutch doctor` checks it for every operation that declares an example. If you
+add a field that carries a clock, a counter or a random id, that check fails.
 
 ## Reading the envelope
 
@@ -150,7 +150,8 @@ def plan_action(customer_id: CustomerId, *, api) -> Plan: ...
   sent, not only what status came back. A passing scenario is **not** evidence
   the real API behaves as recorded — it is evidence your workflow is what you
   say it is.
-- Run `scutch validate` and `scutch doctor` before reporting done.
+- Run `scutch doctor` before reporting done: it reports contracts, specs and
+  every declared convention together.
 
 Authoring conventions in full: `docs/workspace.md` and `CONTRIBUTING.md`.
 

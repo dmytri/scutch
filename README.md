@@ -230,7 +230,7 @@ See [`docs/workspace.md`](docs/workspace.md#what-a-feature-proves--and-what-it-d
 ## Verification
 
 ```bash
-pytest            # 76 tests: contract, lifecycle, Gherkin, TUI, acceptance
+pytest            # 95 tests: contract, lifecycle, Gherkin, TUI, acceptance
 scutch validate   # contracts and specs agree
 scutch doctor     # every documented capability is servable
 ```

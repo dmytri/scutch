@@ -171,10 +171,13 @@ def test_doctor_passes_on_a_complete_workspace(cli):
     assert report["ok"], failing
 
 
-def test_validate_agrees(cli):
-    report, code, _ = cli.scutch("validate", "--format", "json")
+def test_doctor_agrees_with_validate(cli):
+    """One soundness command: doctor reports contracts and specs together."""
+    report, code, _ = cli.scutch("doctor", "--format", "json")
     assert report["ok"]
     assert code == 0
+    names = {c["check"] for c in report["checks"]}
+    assert {"contracts", "specs_present"} <= names
 
 
 def test_status_of_a_pending_plan_returns_the_approval_command(cli):

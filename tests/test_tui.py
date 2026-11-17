@@ -163,7 +163,7 @@ async def test_app_starts_on_a_usable_operation(ws):
     async with app.run_test() as pilot:
         await pilot.pause()
         lv = app.query_one("#ops", textual.widgets.ListView)
-        assert len(lv.children) == 3
+        assert len(lv.children) == len(ws.registry.all())
         assert app.current is not None
         assert app.current.name == ws.registry.names()[0]
         assert app.fields, "form was not generated for the initial operation"

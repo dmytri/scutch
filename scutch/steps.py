@@ -47,6 +47,8 @@ class Steps:
         self.wire: list[dict] = []
         self.recording: str | None = None
         self.cassette: dict | None = None
+        #: Input supplied to the generic `When I run <operation>` step.
+        self.inputs: dict = {}
 
     # -- helpers ---------------------------------------------------------
 
@@ -119,6 +121,37 @@ class Steps:
 
     # -- Given -----------------------------------------------------------
 
+    # -- GMV / query steps ------------------------------------------------
+
+    def when_compute_net_confirmed(self, net: str, confirmation: str) -> None:
+        self.invoke(
+            ["scutch", "run", "saleor.gmv.compute", "--input", "@-", "--format", "json"],
+            {
+                "basis": "net-confirmed",
+                "net": float(net),
+                "confirmation": float(confirmation),
+                "return_rate": 0.15,
+            },
+        )
+
+    def when_compute_api_derived_without_requests(self) -> None:
+        self.invoke(
+            ["scutch", "run", "saleor.gmv.compute", "--input", "@-", "--format", "json"],
+            {"basis": "api-derived"},
+        )
+
+    def then_result_is(self, value: str) -> None:
+        assert self.last["status"] == "complete", self.last.get("error")
+        assert self.last["result"]["our_gmv"] == float(value)
+
+    def then_result_names_query(self) -> None:
+        query = self.last["result"]["query"]
+        assert query.endswith(".sql"), query
+
+    def then_error_names(self, field: str) -> None:
+        message = (self.last.get("error") or {}).get("message", "")
+        assert field in message, message
+
     def given_fresh_workspace(self) -> None:
         """Reset to the committed state.
 
@@ -158,6 +191,39 @@ class Steps:
         )
 
     # -- When ------------------------------------------------------------
+
+    def when_run_operation(self, operation: str) -> None:
+        """`When I run <operation>` — the generic step every scaffold uses.
+
+        Without this, a scaffolded workflow cannot execute at all, which would
+        make `scutch new` emit a feature that can never pass.
+        """
+        self.invoke(
+            ["scutch", "run", operation, "--input", "@-", "--format", "json"],
+            self.inputs or {},
+        )
+
+    def when_run_with_input(self, operation: str, raw: str) -> None:
+        """`When I run <op> with input {...}` — one step, so the input is set
+        before the call rather than after it."""
+        import json as _json
+
+        try:
+            payload = _json.loads(raw)
+        except _json.JSONDecodeError as exc:
+            raise AssertionError(f"with input: not valid JSON: {exc}") from exc
+        self.invoke(
+            ["scutch", "run", operation, "--input", "@-", "--format", "json"], payload
+        )
+
+    def when_with_input(self, raw: str) -> None:
+        """`And with input {"id": "x"}` — the inputs for the generic run step."""
+        import json as _json
+
+        try:
+            self.inputs = _json.loads(raw)
+        except _json.JSONDecodeError as exc:
+            raise AssertionError(f"with input: not valid JSON: {exc}") from exc
 
     def when_preview(self) -> None:
         assert self.customer and self.permission
@@ -226,6 +292,44 @@ class Steps:
         self.envelopes.append(env)
 
     # -- Then ------------------------------------------------------------
+
+    def then_scaffold_is_unfinished(self) -> None:
+        """A scaffold asserts its own incompleteness, so it cannot pass falsely.
+
+        It is replaced when the body is written. Until then, "this is not done"
+        is the only true statement about the step.
+        """
+        assert self.last["status"] == "failed", self.last["status"]
+        error = self.last.get("error") or {}
+        assert "NotImplementedError" in str(error) or error.get("code") == "operation_failed", error
+
+    def then_result_lists_n_bases(self, n: str) -> None:
+        result = self.last.get("result") or {}
+        bases = result.get("bases") or result.get("rows") or []
+        assert len(bases) == int(n), f"expected {n} bases, got {len(bases)}"
+
+    def then_our_gmv_is(self, value: str) -> None:
+        got = (self.last.get("result") or {}).get("our_gmv")
+        assert got is not None, self.last.get("result")
+        assert abs(float(got) - float(value)) < 0.01, f"our_gmv {got} != {value}"
+
+    def then_error_names_permitted(self) -> None:
+        error = self.last.get("error") or {}
+        details = error.get("details") or {}
+        text = json.dumps(details) + " " + str(error.get("message", ""))
+        assert "net-confirmed" in text or "permitted" in text.lower() or "one of" in text.lower(), text[:300]
+
+    def then_status_in(self, allowed: str) -> None:
+        """`Then the envelope status is one of "a", "b"` — for a scaffold.
+
+        A scaffolded step does not know whether the operation needs approval;
+        it should assert that the outcome is *definite*, not that it is a
+        particular one it cannot yet predict.
+        """
+        import re as _re
+
+        options = _re.findall(r'"([^"]+)"', allowed)
+        assert self.last["status"] in options, (self.last["status"], options)
 
     def then_envelope_status(self, status: str) -> None:
         assert self.last["status"] == status, json.dumps(self.last, indent=2)[:1200]
@@ -406,6 +510,11 @@ class Steps:
 
 LIBRARY = [
     step(r"a fresh workspace", "given_fresh_workspace"),
+    step(r"I compute net-confirmed GMV of ([0-9.]+) at ([0-9.]+)", "when_compute_net_confirmed"),
+    step(r"I compute api-derived GMV without requests", "when_compute_api_derived_without_requests"),
+    step(r"the result is ([0-9.]+)", "then_result_is"),
+    step(r"the result names the query file it ran", "then_result_names_query"),
+    step(r'the error names "([^"]+)"', "then_error_names"),
     step(r'the recording "([^"]+)"', "given_recording"),
     step(r'customer "([^"]+)" already has permission "([^"]+)" on channel "([^"]+)"', "given_customer_has"),
     step(r'customer "([^"]+)" is missing permission "([^"]+)" on channel "([^"]+)"', "given_customer_missing"),
@@ -415,6 +524,14 @@ LIBRARY = [
     step(r"I cancel the pending plan", "when_cancel_pending"),
     step(r"I approve the cancelled digest", "when_approve_cancelled_digest"),
     step(r'I approve digest "([^"]+)"', "when_approve_digest"),
+    step(r"I run ([a-z][a-z0-9_.]*)", "when_run_operation"),
+    step(r"I run ([a-z][a-z0-9_.]*) with input (.+)$", "when_run_with_input"),
+    step(r"the scaffold is unfinished", "then_scaffold_is_unfinished"),
+    step(r"the result lists (\d+) bases", "then_result_lists_n_bases"),
+    step(r"our GMV is ([0-9.]+)", "then_our_gmv_is"),
+    step(r"the error names the permitted bases", "then_error_names_permitted"),
+    step(r"the envelope status is one of (.+)$", "then_status_in"),
+    step(r"with input (.+)$", "when_with_input"),
     step(r"I run the permission repair with no customer", "when_run_no_customer"),
     step(r"the process restarts", "when_process_restarts"),
     step(r"I ask for the workspace context", "when_context"),
@@ -462,85 +579,3 @@ LIBRARY = [
 
 def library() -> list:
     return LIBRARY
-
-
-# --------------------------------------------------------------------------
-# Harness: run a feature in-process, with no subprocess and no test fixtures.
-
-
-class InProcessHarness:
-    """What the step vocabulary needs, backed by the library directly.
-
-    ``scutch run <feature>`` uses this: the steps call ``runner.execute`` the way
-    the CLI does, so a workflow and its test exercise one code path. Doubles are
-    mandatory here — a provider that is not replayable makes the feature fail
-    rather than quietly reach the network.
-    """
-
-    def __init__(self, ws, recording: str | None = None):
-        self.workspace = ws.root
-        self._ws = ws
-        self.recording = recording
-        self._wire: list[dict] = []
-
-    # -- harness protocol -------------------------------------------------
-
-    def reset(self) -> None:
-        """A fresh workspace means a fresh run store, not a fresh checkout."""
-        import shutil
-
-        runs = self._ws.runs_dir
-        if runs.is_dir():
-            shutil.rmtree(runs)
-        runs.mkdir(parents=True, exist_ok=True)
-
-    def drain_wire(self) -> list[dict]:
-        from .providers import clear_wire, wire_log
-
-        out = wire_log(self._ws.root)
-        clear_wire(self._ws.root)
-        return out
-
-    def run(self, argv: list[str], stdin: dict | None = None):
-        """Interpret a published argv as a library call."""
-        if argv[:2] != ["scutch", "run"]:
-            raise SystemExit(f"a workflow step must be `scutch run …`, got: {argv[:2]}")
-        name, rest = argv[2], argv[3:]
-        kwargs: dict[str, Any] = {}
-        if "--approve-plan" in rest:
-            kwargs["approve_plan"] = rest[rest.index("--approve-plan") + 1]
-        if "--idempotency-key" in rest:
-            kwargs["idempotency_key"] = rest[rest.index("--idempotency-key") + 1]
-        from .runner import execute as run_operation
-
-        env, code = run_operation(self._ws, name, stdin or {}, **kwargs)
-        return env, code, ""
-
-    def scutch(self, *args: str, stdin: dict | None = None):
-        """Non-`run` commands a feature may use (context, describe, cancel…)."""
-        from . import discovery
-        from .runner import cancel, status
-
-        cmd, rest = args[0], list(args[1:])
-        if cmd == "context":
-            return self._ws.context(), 0, ""
-        if cmd == "describe":
-            return discovery.describe(self._ws, rest[0]), 0, ""
-        if cmd == "cancel":
-            return cancel(self._ws, rest[0])[0], 0, ""
-        if cmd == "status":
-            return status(self._ws, rest[0])[0], 0, ""
-        raise SystemExit(f"unsupported command in a workflow step: {cmd}")
-
-    # -- internals --------------------------------------------------------
-
-    def _sent(self) -> list[dict]:
-        """Everything the providers have sent, from the instances in use.
-
-        Resolutions are per-execution, so the log is collected from a transport
-        that records into a workspace-level sink as it goes. Reading it from a
-        *fresh* resolution would always be empty — the bug this replaced.
-        """
-        from .providers import wire_log
-
-        return wire_log(self._ws.root)

@@ -32,3 +32,33 @@ asyncio_default_fixture_loop_scope = "function"
 
 [tool.hatch.build.targets.sdist]
 include = ["scutch", "tests", "specs", "docs", "fixtures", "operations", "providers", "justfile", "scutch.toml", "README.md", "LICENSE", "CONTRIBUTING.md"]
+# ---------------------------------------------------------------------------
+# Workflow steps. Every step is a *script* task: it runs in Poe's Python
+# process, so http/exec/provider are all replaceable objects and a feature can
+# assert exactly what would be sent. No shell tasks -- `sh` would re-join argv
+# into a string and the assertion would become a grep.
+
+[tool.poe.tasks]
+customers = { script = "poe_steps:list_customers", help = "list customers" }
+ga-token = { script = "poe_steps:ga_token", help = "prove the gcloud call, as an argv list" }
+doctor = { script = "poe_steps:doctor", help = "run the convention checks" }
+
+[tool.poe.tasks.repair]
+script = "poe_steps:repair_customer"
+help = "preview a permission repair (needs approval)"
+args = [
+  { name = "customer_id", positional = true, required = true },
+  { name = "permission", positional = true, required = true, choices = [
+    "read_orders", "manage_orders", "manage_products",
+  ] },
+  { name = "channel", default = "retail", choices = ["retail", "wholesale"] },
+]
+
+[tool.poe.tasks.gmv]
+script = "poe_steps:gmv_net_confirmed"
+help = "net-confirmed GMV from its inputs"
+args = [
+  { name = "net", positional = true, required = true },
+  { name = "confirmation", positional = true, required = true },
+  { name = "return_rate", default = "0.15" },
+]

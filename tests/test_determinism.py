@@ -71,9 +71,9 @@ def test_no_clock_or_randomness_in_the_reproducible_part(cli):
         assert banned not in text, f"volatile field {banned!r} leaked into the envelope"
 
 
-def test_console_script_help_mentions_verify():
-    """`scutch verify` is the user-facing form of this guarantee."""
+def test_doctor_is_the_user_facing_form_of_this_guarantee():
+    """Reproducibility is checked by `scutch doctor`, not a separate command."""
     from scutch.cli import app
 
     commands = {c.name or c.callback.__name__ for c in app.registered_commands}
-    assert "verify" in commands
+    assert "doctor" in commands
