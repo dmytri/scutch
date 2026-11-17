@@ -58,6 +58,21 @@ class Operation:
         }
 
 
+SEED = Path(__file__).parent / "data" / "seed.json"
+
+
+def seed(root: Path | str) -> None:
+    """Copy the demo seed to the working ledger if it is not there yet.
+
+    Called by every entry point (CLI, browser, prompts) rather than each one
+    remembering: a workspace that is missing its data should look the same
+    however you opened it.
+    """
+    working = Path(root) / "ledger.json"
+    if not working.is_file() and SEED.is_file():
+        working.write_text(SEED.read_text())
+
+
 def discover(root: Path | str) -> dict[str, Operation]:
     """Load every operation under ``<root>/operations``."""
     base = Path(root) / "operations"

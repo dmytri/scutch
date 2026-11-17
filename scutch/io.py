@@ -48,6 +48,14 @@ class UnknownEffect(ScutchError):
     """An ``io`` kind outside the four."""
 
 
+class Missing(ScutchError):
+    """A read named a file that is not there.
+
+    Translated at the seam so an operation never has to guard a read with
+    try/except, and a person sees a sentence rather than a traceback.
+    """
+
+
 def key(kind: str, args: dict[str, Any]) -> str:
     """The canonical form of one ask. This is what gets compared and hashed."""
     return json.dumps({"kind": kind, **args}, sort_keys=True, separators=(",", ":"))
@@ -93,7 +101,11 @@ class IO:
             return self._reply()
 
         if kind == "read":
-            return (self.root / args["path"]).read_text()
+            path = self.root / args["path"]
+            try:
+                return path.read_text()
+            except FileNotFoundError:
+                raise Missing(f"no file {args['path']} in {self.root}") from None
         if not self.execute:
             return ""
         if kind == "exec":

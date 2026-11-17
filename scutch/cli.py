@@ -20,7 +20,8 @@ USAGE = """scutch list
 scutch describe OPERATION
 scutch run OPERATION [--input JSON | --input @FILE] [--approve DIGEST]
 scutch run OPERATION --input - < input.json
-scutch ui
+scutch ui          browser (full screen)
+scutch prompt      the same steps, line by line
 
 Envelopes are JSON on stdout. A plan has a status of "dry"; repeat the same
 command with --approve DIGEST to apply exactly that plan."""
@@ -41,24 +42,21 @@ def main(argv: list[str] | None = None) -> int:
         if args[0] == "run":
             return _run(root, args[1:])
         if args[0] == "ui":
-            from .tui import main as ui_main
+            from .browser import run as ui_run
 
-            return ui_main(root)
+            return ui_run(root)
+        if args[0] == "prompt":
+            from .tui import main as prompt_main
+
+            return prompt_main(root)
         return _fail(f"unknown command {args[0]!r}", 2)
     except (ScutchError, Unapproved, Unanswered) as exc:
         return _fail(str(exc), 1)
 
 
 def _ensure_ledger(root: Path) -> None:
-    """Copy the seed to the working ledger once, if it is not there yet.
-
-    The seed is never written to, so a demo is repeatable: delete ledger.json and
-    the next run starts from the committed state.
-    """
-    seed = Path(__file__).parent / "data" / "seed.json"
-    working = root / "ledger.json"
-    if not working.is_file() and seed.is_file():
-        working.write_text(seed.read_text())
+    """A workspace that is missing its data looks the same however you open it."""
+    catalogue.seed(root)
 
 
 def _list(root: Path) -> int:

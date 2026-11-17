@@ -45,37 +45,43 @@ the effects drift between the two passes, the run is refused.
 
 An agent does four things: **list → describe → run (dry) → run --approve**.
 
-`scutch ui` does exactly those four, with prompts instead of JSON:
+Two front ends, both projections of the same two calls:
 
-```console
-$ scutch ui
-  1  orders.fulfil      Mark a placed order fulfilled.
-  2  orders.fulfil_all  Fulfil everything outstanding.
-  3  orders.list        List orders.
-  4  orders.notify      Fulfil and notify a webhook.
+**`scutch ui`** — a full-screen browser: operations in a left rail, a form for
+the parameters, a review pane showing the effects and the digest, and a
+`DataTable` for results (it sizes its own columns, sorts, and scrolls). Textual
+does the tedious parts; the app calls `plan()` and `apply()` exactly as the CLI
+does.
 
-choose> 1
-
-orders.fulfil — Mark a placed order fulfilled.
-  order_id (required): ord_a1
-
-  This will:
-    write ledger.json
-
-  digest sha256:0eaf4259…
-  approve? [y/N]> y
-
-  applied
-    order_id   ord_a1
-    status     fulfilled
+```
+┌ Operations ────┬ orders.fulfil ──────────────────────┐
+│ > orders.fulfil│                                     │
+│   orders.list  │  Mark a placed order fulfilled.      │
+│   orders.notify│                                     │
+│                │  order_id  [ord_a1 ]                 │
+│                │                                     │
+│                │  [ Preview effects ]  [ Back ]       │
+└────────────────┴─────────────────────────────────────┘
 ```
 
-It calls the same `plan()` and `apply()` the CLI calls, so the digest it shows
-is the digest the CLI would show. A test asserts exactly that — if the two ever
-disagreed, a person would be approving something the agent would not.
+**`scutch prompt`** — the same four steps as plain questions, for pipes, CI, or
+a terminal Textual cannot drive.
 
-There is no form library, no curses, no dependency: the TUI is `input()` over
-the same catalogue.
+```console
+$ scutch prompt
+  1  orders.fulfil   Mark a placed order fulfilled.
+choose> 1
+  order_id (required): ord_a1
+  This will:
+    write ledger.json
+  digest sha256:0eaf4259…
+  approve? [y/N]> y
+  applied
+```
+
+Either way the digest is the one the CLI would print. `tests/test_browser.py` and
+`tests/test_tui.py` assert that against `plan()`, so a person can never approve
+something the agent would not.
 
 ## Why it is built this way
 
