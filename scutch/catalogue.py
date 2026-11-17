@@ -49,12 +49,36 @@ class Operation:
             )
         return out
 
+    @property
+    def calls(self) -> list[str]:
+        """Operations this one composes, read from `io("run", operation=...)`.
+
+        A workflow is an operation that calls operations. Declaring that in the
+        code — rather than in a separate YAML — means the steps and the code
+        cannot disagree, and the catalogue can show the graph.
+        """
+        import ast
+
+        try:
+            tree = ast.parse(self.source.read_text())
+        except SyntaxError:
+            return []
+        found = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            for keyword in node.keywords:
+                if keyword.arg == "operation" and isinstance(keyword.value, ast.Constant):
+                    found.append(str(keyword.value.value))
+        return sorted(set(found))
+
     def describe(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "parameters": self.parameters,
             "source": str(self.source),
             "doc": (inspect.getdoc(self.fn) or "").strip(),
+            "calls": self.calls,
         }
 
 

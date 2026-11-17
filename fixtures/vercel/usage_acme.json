@@ -1,0 +1,318 @@
+{
+  "project": "acme-app",
+  "granularity": "week",
+  "rows": [
+    {
+      "week_start": "2025-01-06",
+      "requests": 539897
+    },
+    {
+      "week_start": "2025-01-13",
+      "requests": 542588
+    },
+    {
+      "week_start": "2025-01-20",
+      "requests": 554621
+    },
+    {
+      "week_start": "2025-01-27",
+      "requests": 555313
+    },
+    {
+      "week_start": "2025-02-03",
+      "requests": 564600
+    },
+    {
+      "week_start": "2025-02-10",
+      "requests": 521098
+    },
+    {
+      "week_start": "2025-02-17",
+      "requests": 495418
+    },
+    {
+      "week_start": "2025-02-24",
+      "requests": 478176
+    },
+    {
+      "week_start": "2025-03-03",
+      "requests": 432738
+    },
+    {
+      "week_start": "2025-03-10",
+      "requests": 493772
+    },
+    {
+      "week_start": "2025-03-17",
+      "requests": 510477
+    },
+    {
+      "week_start": "2025-03-24",
+      "requests": 535370
+    },
+    {
+      "week_start": "2025-03-31",
+      "requests": 517128
+    },
+    {
+      "week_start": "2025-04-07",
+      "requests": 581026
+    },
+    {
+      "week_start": "2025-04-14",
+      "requests": 642545
+    },
+    {
+      "week_start": "2025-04-21",
+      "requests": 587288
+    },
+    {
+      "week_start": "2025-04-28",
+      "requests": 624617
+    },
+    {
+      "week_start": "2025-05-05",
+      "requests": 636827
+    },
+    {
+      "week_start": "2025-05-12",
+      "requests": 555476
+    },
+    {
+      "week_start": "2025-05-19",
+      "requests": 595561
+    },
+    {
+      "week_start": "2025-05-26",
+      "requests": 551347
+    },
+    {
+      "week_start": "2025-06-02",
+      "requests": 529066
+    },
+    {
+      "week_start": "2025-06-09",
+      "requests": 548510
+    },
+    {
+      "week_start": "2025-06-16",
+      "requests": 581571
+    },
+    {
+      "week_start": "2025-06-23",
+      "requests": 607297
+    },
+    {
+      "week_start": "2025-06-30",
+      "requests": 676927
+    },
+    {
+      "week_start": "2025-07-07",
+      "requests": 669057
+    },
+    {
+      "week_start": "2025-07-14",
+      "requests": 704713
+    },
+    {
+      "week_start": "2025-07-21",
+      "requests": 760339
+    },
+    {
+      "week_start": "2025-07-28",
+      "requests": 726194
+    },
+    {
+      "week_start": "2025-08-04",
+      "requests": 680544
+    },
+    {
+      "week_start": "2025-08-11",
+      "requests": 701399
+    },
+    {
+      "week_start": "2025-08-18",
+      "requests": 682849
+    },
+    {
+      "week_start": "2025-08-25",
+      "requests": 610813
+    },
+    {
+      "week_start": "2025-09-01",
+      "requests": 579737
+    },
+    {
+      "week_start": "2025-09-08",
+      "requests": 620863
+    },
+    {
+      "week_start": "2025-09-15",
+      "requests": 649571
+    },
+    {
+      "week_start": "2025-09-22",
+      "requests": 688450
+    },
+    {
+      "week_start": "2025-09-29",
+      "requests": 788115
+    },
+    {
+      "week_start": "2025-10-06",
+      "requests": 759729
+    },
+    {
+      "week_start": "2025-10-13",
+      "requests": 867774
+    },
+    {
+      "week_start": "2025-10-20",
+      "requests": 798788
+    },
+    {
+      "week_start": "2025-10-27",
+      "requests": 809954
+    },
+    {
+      "week_start": "2025-11-03",
+      "requests": 833732
+    },
+    {
+      "week_start": "2025-11-10",
+      "requests": 814272
+    },
+    {
+      "week_start": "2025-11-17",
+      "requests": 769168
+    },
+    {
+      "week_start": "2025-11-24",
+      "requests": 726819
+    },
+    {
+      "week_start": "2025-12-01",
+      "requests": 711414
+    },
+    {
+      "week_start": "2025-12-08",
+      "requests": 724017
+    },
+    {
+      "week_start": "2025-12-15",
+      "requests": 770670
+    },
+    {
+      "week_start": "2025-12-22",
+      "requests": 797578
+    },
+    {
+      "week_start": "2025-12-29",
+      "requests": 869772
+    },
+    {
+      "week_start": "2026-01-05",
+      "requests": 934281
+    },
+    {
+      "week_start": "2026-01-12",
+      "requests": 952405
+    },
+    {
+      "week_start": "2026-01-19",
+      "requests": 999726
+    },
+    {
+      "week_start": "2026-01-26",
+      "requests": 985912
+    },
+    {
+      "week_start": "2026-02-02",
+      "requests": 1012866
+    },
+    {
+      "week_start": "2026-02-09",
+      "requests": 909841
+    },
+    {
+      "week_start": "2026-02-16",
+      "requests": 842602
+    },
+    {
+      "week_start": "2026-02-23",
+      "requests": 814170
+    },
+    {
+      "week_start": "2026-03-02",
+      "requests": 815067
+    },
+    {
+      "week_start": "2026-03-09",
+      "requests": 860263
+    },
+    {
+      "week_start": "2026-03-16",
+      "requests": 856775
+    },
+    {
+      "week_start": "2026-03-23",
+      "requests": 940289
+    },
+    {
+      "week_start": "2026-03-30",
+      "requests": 1064574
+    },
+    {
+      "week_start": "2026-04-06",
+      "requests": 944926
+    },
+    {
+      "week_start": "2026-04-13",
+      "requests": 1048565
+    },
+    {
+      "week_start": "2026-04-20",
+      "requests": 1129248
+    },
+    {
+      "week_start": "2026-04-27",
+      "requests": 1129139
+    },
+    {
+      "week_start": "2026-05-04",
+      "requests": 1091056
+    },
+    {
+      "week_start": "2026-05-11",
+      "requests": 1017576
+    },
+    {
+      "week_start": "2026-05-18",
+      "requests": 1014178
+    },
+    {
+      "week_start": "2026-05-25",
+      "requests": 963550
+    },
+    {
+      "week_start": "2026-06-01",
+      "requests": 920495
+    },
+    {
+      "week_start": "2026-06-08",
+      "requests": 1049360
+    },
+    {
+      "week_start": "2026-06-15",
+      "requests": 1015416
+    },
+    {
+      "week_start": "2026-06-22",
+      "requests": 1043852
+    },
+    {
+      "week_start": "2026-06-29",
+      "requests": 1138705
+    }
+  ]
+}

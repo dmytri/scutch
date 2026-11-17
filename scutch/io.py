@@ -28,9 +28,20 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-KINDS = ("read", "write", "exec", "http")
-#: Kinds that leave a mark. Every one of them belongs in a plan.
-EFFECTS = ("write", "exec", "http")
+KINDS = ("read", "write", "exec", "http", "run")
+#: Kinds that change the world, and therefore belong in a plan.
+#:
+#: `write` changes a file. `http` leaves the process and may change something
+#: remote. `exec` is *not* here: it is an observation. A command's answer is
+#: data — a session token, a hostname, a list of rows — and putting that in the
+#: plan has two bad consequences this module used to have: a credential gets
+#: printed and hashed (so it lands in the approval digest), and the same plan
+#: hashes differently every run because the token changed.
+#:
+#: `run` is absent for the same reason as `write`'s opposite: calling another
+#: operation is not itself an effect. The inner operation reports its own, into
+#: this same seam, so a workflow's blast radius is the sum of its steps.
+EFFECTS = ("write", "http")
 
 
 class ScutchError(Exception):
@@ -65,9 +76,22 @@ class Missing(ScutchError):
     """
 
 
+#: Arguments that are credentials or secrets and must never be hashed or shown.
+OPAQUE = ("headers", "password", "token", "secret")
+
+
 def key(kind: str, args: dict[str, Any]) -> str:
-    """The canonical form of one ask. This is what gets compared and hashed."""
-    return json.dumps({"kind": kind, **args}, sort_keys=True, separators=(",", ":"))
+    """The canonical form of one ask. This is what gets compared and hashed.
+
+    Credential-bearing arguments are reduced to whether they were present, not
+    what they were: a session token in a header would otherwise be printed in
+    the plan and hashed into the digest, which is where the last bug came from.
+    """
+    shown = {
+        name: ("<redacted>" if name in OPAQUE and value else value)
+        for name, value in args.items()
+    }
+    return json.dumps({"kind": kind, **shown}, sort_keys=True, separators=(",", ":"))
 
 
 def digest(effects: list[str]) -> str:
@@ -105,6 +129,16 @@ class IO:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(args["text"])
             return None
+
+        if kind == "run":
+            # Call another operation through this same seam. It inherits the
+            # mode, so a dry run stays dry all the way down and a doubled run
+            # stays doubled — there is no way to escape by composing.
+            from .catalogue import get
+
+            operation = get(self.root, args["operation"])
+            nested = {k: v for k, v in args.items() if k != "operation"}
+            return operation.fn(self, **nested)
 
         if self.answers is not None:
             return self._reply()
@@ -153,5 +187,16 @@ class IO:
 
     @property
     def effects(self) -> list[str]:
-        """The subset that leaves a mark: what a plan has to cover."""
+        """What would change the world: what a plan has to cover.
+
+        Deliberately excludes `read`, `exec` and `run`. Those *observe*; their
+        answers are data and may contain anything, including a credential. A
+        plan that included them would be unreproducible and would leak.
+        """
         return [key(kind, args) for kind, args in self.calls if kind in EFFECTS]
+
+    @property
+    def observations(self) -> list[str]:
+        """What the run asked the world, including calls whose *answers* were
+        fed into later calls. Not part of the plan; useful in a failure report."""
+        return [key(kind, args) for kind, args in self.calls if kind not in EFFECTS]

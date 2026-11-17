@@ -3,7 +3,7 @@ name = "scutch"
 version = "0.1.0"
 description = "A folder of plain functions, one seam to the world."
 requires-python = ">=3.11"
-dependencies = ["textual>=8,<9"]
+dependencies = ["textual>=8,<9", "pandas>=2", "statsmodels>=0.14"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]

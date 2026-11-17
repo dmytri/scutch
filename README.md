@@ -41,6 +41,66 @@ An operation is called **twice** with the same inputs: once to learn its effects
 once to perform them. The digest of those effects is what approval binds to. If
 the effects drift between the two passes, the run is refused.
 
+## A real workflow
+
+A workflow is **an operation that calls operations**. There is no separate YAML,
+no DAG file, no scheduler. `operations/usage/analyse.py` is one:
+
+```python
+def usage_report(io, customer: str, project: str):
+    orders = io("run", operation="usage.metabase", customer=customer)["rows"]
+    usage  = io("run", operation="usage.vercel", project=project)["rows"]
+    ...            # WoW, MoM, TTM, then SARIMAX
+```
+
+`scutch describe usage.analyse` reports what it composes:
+
+```json
+{"name": "usage.analyse", "calls": ["usage.metabase", "usage.vercel"]}
+```
+
+and it appears in the browser like any other operation. The steps and the code
+cannot disagree, because the steps *are* the code.
+
+### What the example does
+
+Cross-reference **Metabase** order counts with **Vercel** API usage for one
+customer, then answer the commercial question:
+
+```console
+$ scutch run usage.analyse --input '{"customer":"acme","project":"acme-app"}'
+{
+  "customer": "acme",          "weeks": 78,
+  "latest":  {"week_start": "2026-06-29", "orders": 1568,
+              "requests": 1138705, "requests_per_order": 726.2},
+  "wow":     {"orders": 19.97,  "requests": 9.09},
+  "mom":     {"orders": 26.86,  "requests": 23.71},
+  "yoy":     {"orders": 26.55,  "requests": 68.22},
+  "ttm":     {"orders": 76141,  "requests": 44611168,
+              "avg_requests_per_order": 585.9},
+  "forecast": {
+    "next_week":  {"week_start": "2026-07-06", "orders": 1605, "requests": 1119988},
+    "next_month": {"orders": 7363, "requests": 4659609},
+    "next_twelve_months": {"orders": 91418, "requests": 67980955},
+    "confidence_80_next_week": {"orders": [1430, 1781]}
+  }
+}
+```
+
+78 weeks of history so TTM and a seasonal SARIMAX are meaningful. The model is
+`(1,1,1)(1,1,0,52)` — a random walk with drift and an annual cycle. A week
+present in one series and not the other is **reported, not zero-filled**: a zero
+would look like real usage that did not happen.
+
+### Observations are not effects
+
+`exec` and `read` *observe*; `write` and `http` *act*. Only the second kind is in
+the plan. This matters more than it sounds: the Metabase session token comes back
+from an `exec` and is sent in a header, so counting it as an effect meant the
+token was printed in `effects` and hashed into the digest — an unstable plan that
+leaked a credential. Header values are now `<redacted>` in the plan, and a test
+asserts the digest is identical across two different session tokens.
+
 ## Two front ends, one flow
 
 An agent does four things: **list → describe → run (dry) → run --approve**.
@@ -135,7 +195,12 @@ extra answer is still sitting in `io.answers` and the test can see it.
 Everything, in full. This is the whole repository:
 
 ```text
-operations/orders/        the catalogue — one plain function per file
+operations/usage/         the real example
+  metabase.py             usage.metabase     orders per week (session, then query)
+  vercel.py               usage.vercel       requests per week
+  analyse.py              usage.analyse      the workflow: both, then WoW/MoM/TTM/SARIMAX
+
+operations/orders/        a smaller demo — a JSON ledger
   list.py                 orders.list        look at the ledger
   fulfil.py               orders.fulfil      one order
   fulfil_all.py           orders.fulfil_all  every placed order, one plan
@@ -150,7 +215,8 @@ scutch/
   tui.py                  the same flow, line by line
   data/seed.json          the demo's starting data
 
-tests/                    seam, lifecycle, continuation, browser, cli
+fixtures/                 weekly series standing in for the two APIs
+tests/                    seam, lifecycle, continuation, browser, cli, workflow
 ```
 
 ### Where is `ledger.json`?

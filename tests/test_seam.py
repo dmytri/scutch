@@ -45,12 +45,28 @@ def test_asks_are_recorded_in_order_and_count_repeats(tmp_path):
     assert io.asks == [key("exec", {"argv": ["a"]})] * 2
 
 
-def test_effects_exclude_reads(tmp_path):
+def test_effects_exclude_observations(tmp_path):
+    """Only what changes the world is an effect.
+
+    `exec` used to be an effect, which meant a session token it returned was
+    printed in the plan and hashed into the digest — so the same plan hashed
+    differently every run. A command's answer is data, not a change.
+    """
     io = IO(root=tmp_path, answers=["", "", ""])
     io("read", path="a")
     io("exec", argv=["x"])
     io("http", url="https://x")
-    assert [json.loads(e)["kind"] for e in io.effects] == ["exec", "http"]
+    assert [json.loads(e)["kind"] for e in io.effects] == ["http"]
+    assert [json.loads(o)["kind"] for o in io.observations] == ["read", "exec"]
+
+
+def test_a_credential_in_headers_is_never_hashed_or_shown(tmp_path):
+    io = IO(root=tmp_path, answers=["ok"])
+    io("http", url="https://x", method="POST", body="",
+       headers={"Authorization": "Bearer super-secret"})
+    shown = io.effects[0]
+    assert "super-secret" not in shown
+    assert "<redacted>" in shown
 
 
 def test_a_missing_file_is_a_sentence_not_a_traceback(tmp_path):

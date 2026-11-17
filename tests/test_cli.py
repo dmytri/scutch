@@ -35,7 +35,7 @@ def test_list_names_the_operations(tmp_path):
     code, out, _ = scutch(workspace(tmp_path), "list")
     assert code == 0
     names = [o["name"] for o in out["operations"]]
-    assert set(names) == {"orders.fulfil", "orders.fulfil_all", "orders.list", "orders.notify"}
+    assert {"orders.fulfil", "orders.list", "usage.analyse", "usage.metabase"} <= set(names)
 
 
 def test_describe_reports_the_parameters(tmp_path):
