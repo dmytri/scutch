@@ -155,7 +155,9 @@ Python that happens to take `io`.
 ```console
 $ pip install -e '.[dev]'
 $ python -m pytest tests -q
-```### Credentials
+```
+
+### Credentials
 
 An operation asks for a secret **by name**; where the value comes from is decided
 in one place:
@@ -166,6 +168,7 @@ api_key = io("secret", name="METABASE_API_KEY")
 
 ```console
 $ export METABASE_API_KEY=...        # or: cmd:pass show metabase
+$ export METABASE_API_KEY=cmd:pass\ show\ metabase   # in code
 ```
 
 | reference | resolves to |
