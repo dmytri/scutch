@@ -68,7 +68,6 @@ scutch list                    # what can I call?
 scutch describe saleor.customer.repair
 scutch examples saleor.customer.repair
 scutch doctor                  # is every documented capability servable?
-scutch ui                      # human interface
 ```
 
 Read-only operations need no approval:

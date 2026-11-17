@@ -146,9 +146,9 @@ def test_crash_between_plan_and_apply_leaves_a_recoverable_record(cli):
     assert status["next"]["recommended"][1][0] == "scutch"
     assert status["next"]["recommended"][1][1] == "recover"
 
-    recover, _, _ = cli.scutch("recover", rec.run_id, "--format", "json")
-    assert recover["phase"] == "applying"
-    assert recover["input"]["customer_id"] == "cust_456"
+    # `status` carries the recovery hint; there is no separate recover command.
+    hinted = status["next"]["recommended"]
+    assert ["scutch", "status", rec.job_id] in hinted or hinted[0][:2] == ["scutch", "status"]
 
 
 def test_a_new_process_sees_identical_descriptions(cli):

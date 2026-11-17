@@ -115,12 +115,6 @@ def doctor(ws) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         check("jsonschema", False, str(exc))
 
-    try:
-        from .tui import available
-
-        check("tui", available())
-    except Exception as exc:  # noqa: BLE001
-        check("tui", False, str(exc))
 
     check(
         "just",

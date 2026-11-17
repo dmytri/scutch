@@ -252,8 +252,4 @@ behaviour nobody executes.
 
 ## Generated docs
 
-```bash
-scutch docs        # writes docs/generated/*.md from descriptors
-```
-
-Never hand-edit `docs/generated/`. If a page is wrong, the descriptor is wrong.
+`describe` is the reference; there is no separate generated doc tree.

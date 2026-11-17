@@ -147,37 +147,10 @@ def describe_cmd(
         _fail(exc)
 
 
-@app.command("examples")
-def examples_cmd(
-    operation: str = typer.Argument(...),
-    format: str = typer.Option("json", "--format", "-f"),
-) -> None:
-    """Executable examples for an operation."""
-    try:
-        _emit(discovery.examples(_ws(), operation), format)
-    except ScutchError as exc:
-        _fail(exc)
-
-
 @app.command("doctor")
 def doctor_cmd(format: str = typer.Option("json", "--format", "-f")) -> None:
     """Check the workspace can serve every documented capability."""
     _emit(discovery.doctor(_ws()), format)
-
-
-@app.command("docs")
-def docs_cmd(
-    out: str | None = typer.Option(None, "--out", help="Output directory (default docs/generated)"),
-    format: str = typer.Option("json", "--format", "-f"),
-) -> None:
-    """Regenerate documentation from the descriptors."""
-    ws = _ws()
-    written = discovery.render_docs(ws, Path(out) if out else None)
-    _emit({"kind": "scutch.docs/v1", "written": [str(p.relative_to(ws.root)) for p in written]}, format)
-
-
-# --------------------------------------------------------------------------
-# execution
 
 
 @app.command("run")
@@ -213,53 +186,40 @@ def run_cmd(
 
 @app.command("status")
 def status_cmd(
-    job_or_run: str = typer.Argument(...),
+    job_or_run: str | None = typer.Argument(None, help="Job or run id; omit for recent runs"),
+    limit: int = typer.Option(20, "--limit", "-n"),
     format: str = typer.Option("json", "--format", "-f"),
 ) -> None:
-    """Inspect a recorded run by job or run id."""
+    """Inspect a recorded run, or list recent ones."""
+    ws = _ws()
+    if job_or_run is None:
+        from .runs import RunStore
+
+        recs = RunStore(ws.runs_dir).recent(limit=limit)
+        _emit(
+            {
+                "kind": "scutch.runs/v1",
+                "runs": [
+                    {
+                        "run_id": r.run_id,
+                        "job_id": r.job_id,
+                        "operation": r.operation,
+                        "status": r.status,
+                        "phase": r.phase,
+                        "input": r.input,
+                    }
+                    for r in recs
+                ],
+            },
+            format,
+        )
+        return
     try:
-        payload, code = runner_status(_ws(), job_or_run, format)
+        payload, code = runner_status(ws, job_or_run, format)
     except ScutchError as exc:
         _fail(exc)
     _emit(payload, format)
     raise typer.Exit(code)
-
-
-@app.command("record")
-def record_cmd(
-    provider: str = typer.Argument(..., help="Provider name, e.g. saleor"),
-    endpoint: str = typer.Option(..., "--endpoint", help="GraphQL endpoint to record against"),
-    operation: str = typer.Option(..., "--operation", "-o"),
-    input: str | None = typer.Option(None, "--input", "-i"),
-    approve: bool = typer.Option(False, "--approve", help="Required if the operation mutates"),
-    document: str | None = typer.Option(None, "--document", help="Record one raw GraphQL document instead of an operation"),
-    variables: str | None = typer.Option(None, "--variables", help="JSON variables for --document"),
-    out: str | None = typer.Option(None, "--out", help="Cassette path (default fixtures/<provider>/<op>.json)"),
-    format: str = typer.Option("json", "--format", "-f"),
-) -> None:
-    """Record HTTP exchanges from a live endpoint into a replay cassette."""
-    from pathlib import Path as _Path
-
-    from .record import record_operation
-
-    ws = _ws()
-    try:
-        payload_input = _read_input(input)
-    except ScutchError as exc:
-        _fail(exc)
-    try:
-        import json as _json
-
-        result = record_operation(
-            ws, provider, endpoint, operation, payload_input, approve,
-            _Path(out) if out else None,
-            document_only=document is not None,
-            document=document,
-            variables=_json.loads(variables) if variables else None,
-        )
-    except ScutchError as exc:
-        _fail(exc)
-    _emit(result, format)
 
 
 @app.command("cancel")
@@ -274,74 +234,6 @@ def cancel_cmd(
         _fail(exc)
     _emit(payload, format)
     raise typer.Exit(code)
-
-
-@app.command("runs")
-def runs_cmd(
-    limit: int = typer.Option(20, "--limit", "-n"),
-    format: str = typer.Option("json", "--format", "-f"),
-) -> None:
-    """Recent local run records (newest first)."""
-    from .runs import RunStore
-
-    store = RunStore(_ws().runs_dir)
-    recs = store.recent(limit=limit)
-    _emit(
-        {
-            "kind": "scutch.runs/v1",
-            "runs": [
-                {
-                    "run_id": r.run_id,
-                    "job_id": r.job_id,
-                    "operation": r.operation,
-                    "status": r.status,
-                    "phase": r.phase,
-                    "input": r.input,
-                    "artifacts": r.artifacts,
-                }
-                for r in recs
-            ],
-        },
-        format,
-    )
-
-
-@app.command("recover")
-def recover_cmd(
-    run_id: str = typer.Argument(...),
-    format: str = typer.Option("json", "--format", "-f"),
-) -> None:
-    """Report what an interrupted run needs, without repeating the effect."""
-    from .runs import RunStore, recovery_hint
-
-    store = RunStore(_ws().runs_dir)
-    try:
-        rec = store.load(run_id)
-    except FileNotFoundError:
-        _fail(UsageError(f"no run {run_id!r}"))
-    payload = {
-        "kind": "scutch.recover/v1",
-        "run_id": rec.run_id,
-        "job_id": rec.job_id,
-        "operation": rec.operation,
-        "phase": rec.phase,
-        "status": rec.status,
-        "input": rec.input,
-        "next": recovery_hint(rec),
-    }
-    _emit(payload, format)
-
-
-# --------------------------------------------------------------------------
-# human interface
-
-
-@app.command("ui")
-def ui_cmd() -> None:
-    """Open the terminal interface (same contracts, same transitions)."""
-    from .tui import run_app
-
-    run_app(_ws())
 
 
 @app.command("new")

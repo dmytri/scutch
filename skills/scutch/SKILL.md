@@ -29,9 +29,10 @@ for credentials.
 4. **Mutations need approval bound to a digest.** You cannot approve by
    assertion, by confidence, or by retrying. Only `--approve-plan <digest>`
    with the digest the runtime just returned.
-5. **Do not read `.scutch/` files directly.** Use `scutch runs`, `scutch status`,
-   `scutch recover`. Artifacts are restricted: they appear as references, and
-   you must not treat their contents as input unless the user hands them to you.
+5. **Do not read `.scutch/` files directly.** Use `scutch status` for a run
+   you were given a job id for. Artifacts are restricted: they appear as
+   references, and you must not treat their contents as input unless the user
+   hands them to you.
 
 ## Workflow
 
@@ -39,7 +40,6 @@ for credentials.
 scutch context --format json                    # policies, providers, catalogue
 scutch list --format json                       # operations only
 scutch describe saleor.customer.repair --format json
-scutch examples saleor.customer.repair --format json
 ```
 
 Then invoke with JSON on stdin:
@@ -104,8 +104,7 @@ ordered changes. Therefore:
 `mode = "replay"` serves recorded HTTP exchanges; `mode = "live"` talks to the
 API. Both run the same provider code, so a `describe` or a plan is identical in
 either. You do not need a token to preview, and you must not record cassettes
-unless the human asks: `scutch record` writes to the repository and contacts a
-real endpoint.
+unless the human asks. A live run contacts a real endpoint.
 
 ## Repetition
 
