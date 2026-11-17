@@ -30,7 +30,7 @@ class Permission:
     permissions: tuple[str, ...]
 
     @classmethod
-    def parse(cls, raw: Any, where: str) -> "Permission":
+    def parse(cls, raw: Any, where: str = "permission") -> "Permission":
         if not isinstance(raw, dict):
             raise FieldError(f"{where}: expected an object, got {type(raw).__name__}")
         channel = raw.get("channel")

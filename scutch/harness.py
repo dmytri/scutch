@@ -11,7 +11,9 @@ workflow *and* its proof.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import Any
@@ -42,50 +44,73 @@ class LocalHarness:
         if "--format" in args:
             fmt = args[args.index("--format") + 1]
 
-        from . import cli as cli_mod
+        with self._cassette_pinned():
+            try:
+                return self._dispatch(verb, args, stdin, fmt)
+            except ScutchError as exc:
+                return {"kind": "scutch.error/v1", "error": exc.to_json()}, exc.exit_code, ""
 
+    @contextlib.contextmanager
+    def _cassette_pinned(self):
+        """Pin the scenario's cassette for the duration of one command.
+
+        Without this the provider merges every recording in the directory, so a
+        request key present in several cassettes is answered by whichever file
+        sorts first: a scenario can pass while reading another scenario's data.
+        """
+        if self.recording is None:
+            yield
+            return
+        previous = os.environ.get("SCUTCH_REPLAY")
+        os.environ["SCUTCH_REPLAY"] = self.recording
         try:
-            if verb == "run":
-                from .runner import execute
+            yield
+        finally:
+            if previous is None:
+                os.environ.pop("SCUTCH_REPLAY", None)
+            else:
+                os.environ["SCUTCH_REPLAY"] = previous
 
-                op = next((a for a in args if not a.startswith("-") and a not in ("@-",)), None)
-                if op is None:
-                    return {"kind": "scutch.error/v1", "error": {"code": "usage_error",
-                            "message": "run needs an operation name"}}, 2, ""
-                approve = args[args.index("--approve-plan") + 1] if "--approve-plan" in args else None
-                idem = args[args.index("--idempotency-key") + 1] if "--idempotency-key" in args else None
-                env, code = execute(
-                    self.ws, op, stdin or {}, approve_plan=approve, idempotency_key=idem, fmt=fmt
-                )
-                return env, code, ""
-            if verb == "status":
-                from .runner import status
+    def _dispatch(self, verb: str, args: list[str], stdin: dict | None, fmt: str):
+        if verb == "run":
+            from .runner import execute
 
-                payload, code = status(self.ws, args[0], fmt)
-                return payload, code, ""
-            if verb == "cancel":
-                from .runner import cancel
+            op = next((a for a in args if not a.startswith("-") and a not in ("@-",)), None)
+            if op is None:
+                return {"kind": "scutch.error/v1", "error": {"code": "usage_error",
+                        "message": "run needs an operation name"}}, 2, ""
+            approve = args[args.index("--approve-plan") + 1] if "--approve-plan" in args else None
+            idem = args[args.index("--idempotency-key") + 1] if "--idempotency-key" in args else None
+            env, code = execute(
+                self.ws, op, stdin or {}, approve_plan=approve, idempotency_key=idem, fmt=fmt
+            )
+            return env, code, ""
+        if verb == "status":
+            from .runner import status
 
-                payload, code = cancel(self.ws, args[0], fmt)
-                return payload, code, ""
-            if verb == "context":
-                return self.ws.context(), 0, ""
-            if verb == "describe":
-                from .discovery import describe
+            payload, code = status(self.ws, args[0], fmt)
+            return payload, code, ""
+        if verb == "cancel":
+            from .runner import cancel
 
-                return describe(self.ws, args[0]), 0, ""
-            if verb == "list":
-                from .discovery import list_ops
+            payload, code = cancel(self.ws, args[0], fmt)
+            return payload, code, ""
+        if verb == "context":
+            return self.ws.context(), 0, ""
+        if verb == "describe":
+            from .discovery import describe
 
-                return list_ops(self.ws), 0, ""
-            if verb == "doctor":
-                from .discovery import doctor
+            return describe(self.ws, args[0]), 0, ""
+        if verb == "list":
+            from .discovery import list_ops
 
-                return doctor(self.ws), 0, ""
-            return {"kind": "scutch.error/v1", "error": {"code": "not_implemented",
-                    "message": f"the in-process harness does not implement {verb!r}"}}, 70, ""
-        except ScutchError as exc:
-            return {"kind": "scutch.error/v1", "error": exc.to_json()}, exc.exit_code, ""
+            return list_ops(self.ws), 0, ""
+        if verb == "doctor":
+            from .discovery import doctor
+
+            return doctor(self.ws), 0, ""
+        return {"kind": "scutch.error/v1", "error": {"code": "not_implemented",
+                "message": f"the in-process harness does not implement {verb!r}"}}, 70, ""
 
     def drain_wire(self) -> list[dict]:
         """Transport requests since the last drain, then clear the sink.
