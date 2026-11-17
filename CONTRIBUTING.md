@@ -10,7 +10,7 @@ without relying on any previous conversation.
 python -m venv .venv && . .venv/bin/activate
 pip install -e . pytest pytest-asyncio
 just doctor    # is every documented capability servable?
-just test      # 80 tests, ~15s
+just test      # 89 tests, ~15s
 ```
 
 ## Adding an operation
@@ -44,6 +44,11 @@ Read [`docs/workspace.md`](docs/workspace.md) for the full guide.
 - **No hidden state.** Anything a caller needs to continue must be in the
   envelope. Run records are for inspection and duplicate prevention, not
   context.
+- **Envelopes are reproducible.** An envelope must be a function of the
+  invocation. Anything that varies between two identical runs — a clock, a
+  counter, a random id — belongs in `run_id` or `timing`, never in the answer.
+  `scutch verify NAME` and `tests/test_determinism.py` enforce this; adding a
+  volatile field will fail them, which is the point.
 - **Never widen what reaches a caller.** New result fields are public by
   default; that is why `private()` exists. Add a redaction test when you add a
   payload-carrying field.

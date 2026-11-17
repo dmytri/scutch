@@ -201,15 +201,13 @@ def test_agent_cannot_talk_itself_into_an_unapproved_mutation(repair_world):
     assert ok["result"]["status"] == "applied"
 
 
-def test_human_ui_and_agent_perform_equivalent_transitions(repair_world, workspace):
+def test_human_ui_and_agent_perform_equivalent_transitions(repair_world, workspace, monkeypatch):
     """One lifecycle: the same inputs produce the same envelope via both surfaces."""
-    import os
-
     from scutch.runner import execute
     from scutch.workspace import load_workspace
 
     cli = repair_world
-    os.environ["SCUTCH_REPLAY"] = "scenario-repair"
+    monkeypatch.setenv("SCUTCH_REPLAY", "scenario-repair")
     ws = load_workspace(workspace)
     payload = {"customer_id": "cust_456", "permission": "read_orders", "channel": "retail"}
 
@@ -231,4 +229,3 @@ def test_human_ui_and_agent_perform_equivalent_transitions(repair_world, workspa
     # replay from the beginning of the recording — that is not a UI difference.)
     assert ui_preview["plan"] == cli_preview["plan"]
     assert ui_preview["next"] == cli_preview["next"]
-    os.environ.pop("SCUTCH_REPLAY", None)

@@ -191,6 +191,29 @@ Consequences worth knowing:
 What replay cannot prove: rate limits, partial failures, eventual consistency,
 auth expiry. Those need a live sandbox run.
 
+## Reproducibility
+
+An envelope is a function of the invocation. Same operation, same canonical
+input ⇒ same envelope, apart from `run_id` (the attempt) and `timing`.
+
+`job_id` is *derived* from the invocation rather than random, which is what
+makes a step's stdout diffable, hashable and cacheable. Without it, every run of
+every step produces a unique artifact and "did this run change anything?" has no
+answer.
+
+```bash
+scutch verify saleor.customer.list --input '{}'
+# {"reproducible": true, "envelope_digest": "sha256:59a1f9ef…"}
+```
+
+This is about the *workflow*, not the source. A query returning different rows
+tomorrow is a new input, not nondeterminism. Pin what varies — an `as_of`, a
+window, a cost budget — and the decision over it stays reproducible.
+
+`scutch doctor` checks reproducibility for every operation that declares an
+example, so a field carrying a clock or a random id fails there rather than
+silently making every artifact unique.
+
 ## What the specs prove
 
 A feature states what the workflow *does to the outside world* and how the
@@ -207,7 +230,7 @@ See [`docs/workspace.md`](docs/workspace.md#what-a-feature-proves--and-what-it-d
 ## Verification
 
 ```bash
-pytest            # 80 tests: contract, lifecycle, Gherkin, TUI, acceptance
+pytest            # 89 tests: contract, lifecycle, Gherkin, TUI, acceptance
 scutch validate   # contracts and specs agree
 scutch doctor     # every documented capability is servable
 ```
