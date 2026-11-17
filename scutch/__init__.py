@@ -1,55 +1,30 @@
-"""Scutch — a local-first catalogue of typed operations.
+"""Scutch: a folder of plain functions, one seam to the world.
 
-Public surface for operation authors::
+The whole interface:
 
-    from scutch import operation, plan_for, Plan, Change, field, private
+    from scutch import IO, run, discover
 
-    @operation(name="x.y", summary="...", effect="plan_apply",
-               credentials={"api": Provider("svc")},
-               idempotency_key=["id"])
-    def y(id: str, *, api) -> Report: ...
-
-    @plan_for("x.y")
-    def plan_y(id: str, *, api) -> Plan: ...
+    env = run(fn, root=ws, inputs={"order_id": "ord_a1"})          # plan
+    env = run(fn, root=ws, inputs={...}, approve=env["digest"])    # apply
 """
 
-from .contract import ProviderRef as Provider
-from .contract import operation, plan_for
-from .errors import (
-    ApprovalError,
-    ContractError,
-    NotFound,
-    OperationFailed,
-    ProviderError,
-    ScutchError,
-    UsageError,
-    ValidationError,
-)
-from .gherkin import Scenario, Step, execute, parse_feature, step
-from .plan import Change, Plan
-from .schema import Private, field, private
-from .runner import RunContext
+from .catalogue import Operation, UnknownOperation, discover, get
+from .io import IO, ScutchError, Unanswered, Unapproved, UnknownEffect, digest, key
+from .run import apply, plan, run
 
 __all__ = [
-    "Provider",
-    "operation",
-    "plan_for",
-    "Plan",
-    "Change",
-    "parse_feature",
-    "step",
-    "execute",
-    "RunContext",
-    "field",
-    "private",
-    "Private",
+    "IO",
+    "Operation",
     "ScutchError",
-    "ContractError",
-    "UsageError",
-    "NotFound",
-    "ValidationError",
-    "ApprovalError",
-    "ProviderError",
-    "OperationFailed",
+    "Unanswered",
+    "Unapproved",
+    "UnknownEffect",
+    "UnknownOperation",
+    "apply",
+    "digest",
+    "discover",
+    "get",
+    "key",
+    "plan",
+    "run",
 ]
-__version__ = "0.1.0"

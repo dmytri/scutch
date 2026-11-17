@@ -1,52 +1,22 @@
 [project]
 name = "scutch"
 version = "0.1.0"
-description = "A local-first, repository-centred catalogue of typed operations for humans and agents."
-readme = "README.md"
+description = "A folder of plain functions, one seam to the world."
 requires-python = ">=3.11"
-license = { text = "MIT" }
-dependencies = [
-  "typer>=0.12,<1",
-  "jsonschema>=4.21,<5",
-  "textual>=8,<9",
-]
-
-[project.optional-dependencies]
-dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+dependencies = []
 
 [project.scripts]
-scutch = "scutch.cli:_entry"
+scutch = "scutch.cli:main"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
 
-[tool.hatch.build.targets.wheel]
-packages = ["scutch"]
+[tool.setuptools.packages.find]
+include = ["scutch*"]
+
+[tool.setuptools.package-data]
+scutch = ["data/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
-asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "function"
-
-[tool.hatch.build.targets.sdist]
-include = ["scutch", "tests", "specs", "docs", "fixtures", "operations", "providers", "justfile", "scutch.toml", "README.md", "LICENSE", "CONTRIBUTING.md"]
-# ---------------------------------------------------------------------------
-# Workflow steps. Every step is a *script* task: it runs in Poe's Python
-# process, so http/exec/provider are all replaceable objects and a feature can
-# assert exactly what would be sent. No shell tasks -- `sh` would re-join argv
-# into a string and the assertion would become a grep.
-
-[tool.poe.tasks]
-orders = { script = "poe_steps:list_orders", help = "list orders (a read step)" }
-outstanding = { script = "poe_steps:outstanding", help = "only what still needs doing" }
-ga-token = { script = "poe_steps:ga_token", help = "prove an exec call, as an argv list" }
-doctor = { script = "poe_steps:doctor", help = "run the convention checks" }
-
-[tool.poe.tasks.fulfil]
-script = "poe_steps:fulfil_order"
-help = "preview fulfilling one order (plans)"
-args = [
-  { name = "order_id", positional = true, required = true },
-]

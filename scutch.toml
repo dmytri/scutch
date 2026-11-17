@@ -1,22 +1,8 @@
-[workspace]
-name = "scutch-demo"
-description = "Example workspace: fulfilling orders from a JSON ledger."
-
-[providers.ledger]
-mode = "local"                # local (a file) | replay (a cassette) | live (a network)
-data = "fixtures/orders.json"
-
-[policy]
-require_approval_for = ["plan_apply", "mutate"]
-runs_root = ".scutch/runs"
-artifacts_root = ".scutch/artifacts"
-
-# The shape this workspace insists on. `scutch new` scaffolds from it and
-# `scutch doctor` enforces it, so the two can never disagree.
-[conventions]
-features_root = "specs"
-steps_module = "specs.steps"
-queries = "duckdb"        # a transformation is a .sql file, runnable by hand
-steps = "poe"             # steps run in-process (Poe script task), so all seams double
-secrets = "provider"      # never a literal; declare a Provider handle
-feature_is_workflow = true
+# Scutch needs no configuration. This file exists only because the demo's
+# operations read `ledger.json`, and that file has to come from somewhere.
+#
+# `seed` is copied to `ledger.json` on first run and never modified again, so a
+# demo can be re-run from a clean state by deleting ledger.json.
+[ledger]
+seed = "scutch/data/seed.json"
+working = "ledger.json"

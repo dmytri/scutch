@@ -1,229 +1,112 @@
 # Scutch
 
-**A local-first CLI that turns a repository of ordinary scripts into a
-self-describing catalogue of typed operations.**
+**A folder of plain functions, and one seam to the world.**
 
-Agents discover operations, supply validated arguments, invoke them, and receive
-explicit instructions for continuing. Humans get forms, previews, approvals and
-run inspection through a TUI. `just` provides familiar aliases and simple
-composition.
-
-There is no account, no registry, no cloud service, no generated framework and
-no daemon. The operation contract *is* the product.
+An operation is a Python function that takes `io` first. Every effect it can have
+— reading, writing, running a command, calling an HTTP endpoint — goes through
+that one object. So the plan is exactly the effects the function asked for, and
+approving a plan means approving that list.
 
 ```console
-$ scutch context --format json     # discover the workspace
-$ scutch describe orders.fulfil --format json
+$ scutch list                       # what can I call?
+$ scutch describe orders.fulfil     # how do I call it?
 $ scutch run orders.fulfil --input '{"order_id":"ord_a1"}'
 {
-  "kind": "scutch.envelope/v1",
-  "status": "needs_approval",
-  "plan": {"changes": [{"kind": "status.change", "target": "ord_a1",
-                        "value": "fulfilled"}],
-           "digest": "sha256:3f13f66…"},
-  "next": {"argv": ["scutch","run","orders.fulfil","--input","@-", …,
-                    "--approve-plan","sha256:3f13f66…"],
-           "input": {"order_id": "ord_a1"}}
+  "digest": "sha256:0eaf4259…",
+  "effects": ["{\"kind\":\"write\",\"path\":\"ledger.json\",…}"],
+  "result": {"changed": true, "order_id": "ord_a1", "status": "fulfilled"},
+  "status": "dry"
 }
+$ scutch run orders.fulfil --input '{"order_id":"ord_a1"}' --approve sha256:0eaf4259…
+{"status": "applied", …}
 ```
 
-## Why
+## The whole design
 
-Exploratory work becomes reusable deterministic operations. That is the useful
-idea. Everything else — accounts, registries, generated clients, workflow DSLs —
-is not required to get it, and gets in the way of a repository that future
-contributors and fresh agent sessions can read.
+One function:
 
-## Design principles
-
-1. **The operation contract is the product.** Not the CLI framework, workflow
-   engine or generated documentation.
-2. **No implicit session state.** A fresh process continues from the returned
-   arguments alone.
-3. **One lifecycle, two interfaces.** The TUI and the JSON interface perform
-   identical transitions — they call the same functions.
-4. **Ordinary programs remain authoritative.** Business logic stays normal
-   Python; Scutch does not swallow it into a DSL.
-5. **Self-description is executable truth.** Schemas, invocation instructions
-   and docs come from the implementation contract. Drift fails validation.
-6. **Minimise what enters model context.** Credentials resolve behind provider
-   references; results are deliberately projected, never raw logs.
-7. **Prefer established standards.** Python, JSON Schema, JSON/JSONL, Gherkin,
-   `just`, and conventional tests.
-
-## Install
-
-```bash
-python -m venv .venv && . .venv/bin/activate
-pip install -e .            # provides the `scutch` command
+```python
+io(kind, **args)          # kind: read | write | exec | http
 ```
 
-Optional: `just` for the alias recipes (`apt install just`, `brew install just`,
-or grab a release binary).
+Three modes, and nothing between them:
 
-## Quick start
-
-```bash
-scutch context                 # what is this workspace?
-scutch list                    # what can I call?
-scutch describe orders.fulfil
-scutch doctor                  # is every documented capability servable?
-```
-
-Read-only operations need no approval:
-
-```bash
-scutch run orders.list --input '{}'
-```
-
-## Two interfaces, one lifecycle
-
-The same operation, invoked by an agent and by a person:
-
-| | Agent | Person |
+| | reads | writes, exec, http |
 |---|---|---|
-| entry | `scutch run … --format json` | `scutch ui` |
-| gets | envelope: `status`, `next.argv`, error codes | guided screens, plain sentences |
-| form | `--input @-` (validated JSON) | generated fields with hints |
-| decision | `--approve-plan <digest>` | an "Approve" button, same digest |
-| result | projected `result` object | labelled rows, held-back fields named |
-| keeps going by | executing `next.argv` verbatim | pressing the button it suggests |
-| never | prompts, or blocks waiting | shows a credential value |
+| `IO(root)` | the world | happen |
+| `IO(root, execute=False)` | the world | recorded only — **this is the plan** |
+| `IO(root, answers=[…])` | canned replies | happen |
 
-`scutch ui` is a **projection**, not a second implementation: it calls the same
-runner, so an approval made in the TUI is `--approve-plan <digest>` and nothing
-else. A test asserts the CLI and the TUI compute the *same plan digest* for the
-same inputs — if they ever diverged, a person would be approving something the
-agent would not.
+An operation is called **twice** with the same inputs: once to learn its effects,
+once to perform them. The digest of those effects is what approval binds to. If
+the effects drift between the two passes, the run is refused.
 
-```bash
-scutch ui                              # home: operations and workflows
-scutch ui orders.fulfil                 # straight into one operation
-scutch ui approval                     # straight into a workflow
-```
+## Why it is built this way
 
-## Lifecycle
+The previous version of this repo modelled what external services *returned* —
+response types, recorded cassettes, provider modes — and every model was a guess
+about somebody else's API. Six of its guards turned out to be declarations the
+runtime never honoured: an approval requirement with no plan to approve, a
+`sensitive` flag nothing filtered, a recovery command that did not exist.
 
-Every response is an envelope. `status` is one of
-`needs_input`, `needs_approval`, `running`, `partial`, `complete`, `failed`,
-`cancelled`. `next` is always a complete continuation: canonical inputs plus an
-`argv`.
-
-| transition | what the caller does |
-|---|---|
-| `needs_input` | add the listed missing fields to `next.input`, run `next.argv` |
-| `needs_approval` | run `next.argv` as given — it already carries `--approve-plan <digest>` |
-| `complete` | nothing; `next.argv` inspects the recorded job |
-| `partial` | `next.recommended` gives `status` and `recover` commands |
-| `cancelled` | `scutch cancel <job>` abandoned the plan; its digest is dead |
-| `failed` | fix the reported condition and retry the same invocation |
-
-There is no `scutch continue` and no opaque session token. Approvals are bound
-to a digest derived from the operation, the canonical inputs, the idempotency
-value, and the ordered changes — a plan that differs in any byte has a different
-digest.
+This version has no declarations to disobey. There is one door, the plan is the
+door's record, and a plan cannot be missing from an operation that mutates
+because the plan *is* the operation's effect list.
 
 ## Writing an operation
 
+A file in `operations/`. The path is the name.
+
 ```python
-from scutch import Change, Plan, Provider, operation, plan_for
+# operations/orders/fulfil.py  ->  orders.fulfil
+import json
 
-@operation(
-    name="orders.fulfil",
-    summary="Mark one placed order fulfilled.",
-    effect="plan_apply",
-    credentials={"ledger": Provider("ledger")},
-    idempotency_key=["order_id"],
-)
-def fulfil_order(order_id: OrderId, *, ledger) -> Fulfilment:
-    ...   # ordinary Python: the write path
-
-@plan_for("orders.fulfil")
-def plan_fulfil(order_id: OrderId, *, ledger) -> Plan:
-    ...   # read path: returns Plan(changes=[...]), never mutates
+def fulfil_order(io, order_id: str):
+    """Mark a placed order fulfilled."""
+    data = json.loads(io("read", path="ledger.json"))
+    order = next(o for o in data["orders"] if o["id"] == order_id)
+    if order["status"] != "placed":
+        return {"order_id": order_id, "changed": False}
+    order["status"] = "fulfilled"
+    io("write", path="ledger.json", text=json.dumps(data, indent=2))
+    return {"order_id": order_id, "changed": True}
 ```
 
-The signature supplies parameters, defaults and JSON Schema; `Annotated[...,
-field(...)]` adds constraints; `Annotated[..., private()]` keeps a result field
-out of every envelope. `scutch doctor` fails if the implementation and the
-declared contract disagree.
+The signature is the schema — `describe` reads it. The docstring is the
+description. There is nothing else to declare.
 
-See [`docs/workspace.md`](docs/workspace.md) for the full authoring guide and
-[`docs/agent.md`](docs/agent.md) for the agent-facing boundary.
+## Testing an operation
+
+A test gives the double some answers and asserts **what was asked**, never what
+an answer contained:
+
+```python
+io = IO(root=ws, answers=[ledger_text, "ok"])
+fulfil_and_notify(io, order_id="ord_a1", url="https://hooks.example/x")
+assert [json.loads(a)["kind"] for a in io.asks] == ["read", "write", "http"]
+```
+
+An answer is a permission slip: it exists so the code can walk to its next ask.
+The claim is the sequence of asks. If the code stops asking for something, the
+extra answer is still sitting in `io.answers` and the test can see it.
 
 ## Layout
 
 ```text
-justfile                  thin aliases around canonical invocations
-scutch.toml               providers + policy
-operations/**/*.py        ordinary typed functions, registered by decorator
-providers/*.py            the seam to an external service
-specs/*.feature           executable Gherkin for behaviours to preserve
-fixtures/                 the demo's data seed (never mutated by a run)
-docs/generated/           regenerated from descriptors — never hand-edited
-.scutch/runs/             inspectable run records
-.scutch/artifacts/        run artifacts (restricted by default)
+operations/**/*.py        the catalogue: one function per file, `io` first
+scutch/io.py              the seam
+scutch/run.py             plan / apply, over one function
+scutch/catalogue.py       discover operations from the folder
+scutch/cli.py             list, describe, run
+scutch/data/seed.json     demo data; copied to ledger.json, never modified
+tests/                    the seam, the lifecycle, the continuation, the CLI
 ```
 
-Deleting `.scutch/` removes history and the idempotency cache. It never removes
-the information needed to formulate an invocation.
+There is no registry, no configuration beyond the demo's seed path, no daemon,
+no account, no network required for any test.
 
-## Agent skill
+## Non-goals
 
-The repo ships a [skills](https://github.com/vercel-labs/skills)-format skill so an
-agent can be taught the protocol rather than discovering it by trial:
-
-```bash
-npx skills add dmytri/scutch          # installs skills/scutch into your agent
-```
-
-It covers discovery, the envelope/continuation protocol, plan-digest approval,
-idempotency and recovery, and the authoring rules — with
-`skills/scutch/references/envelopes.md` as the full status/error reference.
-The skill is a *guide to the same contract*: it adds no capabilities, and
-`scutch describe` remains authoritative for any individual operation.
-
-## Conventions, enforced
-
-A convention an agent cannot be *told* is a convention it will ignore. Each one
-declared in `scutch.toml` is a failing check in `scutch doctor`, so the loop is:
-run doctor, read the failing check, fix it.
-
-| convention | what it means |
-|---|---|
-| `queries = "duckdb"` | a transformation is a `.sql` file beside its operation, runnable by hand |
-| `steps = "poe"` | a step is a Poe **script** task: in-process, so http/exec/provider are all doubleable |
-| `secrets = "provider"` | never a literal; declare a provider handle and let the runtime resolve it |
-| `feature_is_workflow` | scenarios run in order against one workspace and stop at the first failure |
-
-`scutch new` scaffolds from the same declarations, so the compliant shape is the
-easy one — and an unfinished scaffold fails doctor by name.
-
-## Verification
-
-```bash
-pytest            # 102 tests: contract, lifecycle, Gherkin, TUI, acceptance
-scutch doctor     # contracts, conventions, fixtures and reproducibility
-scutch doctor     # every documented capability is servable
-```
-
-The acceptance test (`tests/test_acceptance.py`) is the decisive one: a
-simulated fresh agent with **no conversation history, no credentials and only
-the bootstrap text** discovers an operation, resolves missing input, approves an
-exact digest, survives a process restart, and is refused when it tries to mutate
-twice. Every continuation it performs is the envelope's published `next.argv`.
-
-## Non-goals (v1)
-
-No login, cloud control plane or telemetry. No hosted extension registry. No
-general DAG or expression language. No distributed scheduler or required
-daemon. No durable-execution competitor. No automatic claim that arbitrary
-operations are idempotent. No proprietary workflow serialisation format. No
-requirement for agents during unattended execution.
-
-If a workflow later needs distributed retries or durable resumption, a real
-engine can invoke Scutch operations. The typed catalogue stays useful underneath.
-
-## Licence
-
-MIT.
+No workflow engine, no scheduler, no durable execution. If a job needs
+distributed retries, a real engine can call these functions — they are ordinary
+Python that happens to take `io`.

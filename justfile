@@ -1,97 +1,47 @@
-# Scutch workspace aliases.
-#
-# These are *thin aliases only*: each recipe builds a canonical `scutch`
-# invocation and nothing else. No schema, credential handling or workflow
-# semantics may live here — `scutch describe` is the contract.
-
+# Thin aliases. Nothing here is schema or logic: `scutch` is the contract.
 default:
     @just --list
 
-# --- discovery --------------------------------------------------------------
-
-# Discover the workspace: policies, providers, operation catalogue.
-context:
-    @scutch context --format json
-
-# List operations.
+# What can I call?
 list:
-    @scutch list --format json
+    @scutch list
 
-# Describe one operation (full contract, schemas, continuation rules).
-describe operation:
-    @scutch describe {{operation}} --format json
+# How do I call it?
+describe op:
+    @scutch describe {{op}}
 
-# Check the workspace: contracts, conventions, providers, run store.
-doctor:
-    @scutch doctor --format json
-
-# --- execution --------------------------------------------------------------
-
-# Read: list orders.
+# Read the ledger.
 orders:
-    @scutch run orders.list --input '{}' --format json
+    @scutch run orders.list
 
-# Read: list only what still needs doing.
+# What still needs doing?
 outstanding:
-    @scutch run orders.list --input '{"status":"placed"}' --format json
+    @scutch run orders.list --input '{"status":"placed"}'
 
-# Read: inspect one order.
-order order_id:
-    @scutch run orders.inspect \
-      --input '{"order_id":"{{order_id}}"}' \
-      --format json
+# Preview fulfilling one order. Prints a digest; nothing is written.
+fulfil id:
+    @scutch run orders.fulfil --input '{"order_id":"{{id}}"}'
 
-# Preview fulfilling one order. Returns a plan digest; applying needs approval.
-fulfil order_id:
-    @scutch run orders.fulfil \
-      --input '{"order_id":"{{order_id}}"}' \
-      --format json
+# Apply exactly the plan you previewed.
+apply id digest:
+    @scutch run orders.fulfil --input '{"order_id":"{{id}}"}' --approve {{digest}}
 
-# Approve and apply an exact plan. The digest comes from the preview.
-fulfil-apply order_id approve_plan:
-    @scutch run orders.fulfil \
-      --input '{"order_id":"{{order_id}}"}' \
-      --idempotency-key fulfil-{{order_id}} \
-      --approve-plan {{approve_plan}} \
-      --format json
+# Preview, then apply, in one go — the shell does the two steps.
+do id:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    digest="$(scutch run orders.fulfil --input "{\"order_id\":\"{{id}}\"}" | jq -r .digest)"
+    scutch run orders.fulfil --input "{\"order_id\":\"{{id}}\"}" --approve "$digest"
 
-# Preview fulfilling every outstanding order, in one plan.
+# Fulfil everything outstanding, as one plan.
 fulfil-all:
-    @scutch run orders.bulk --input '{}' --format json
+    @scutch run orders.fulfil_all
 
-# Inspect a job or run.
-status job:
-    @scutch status {{job}} --format json
-
-# Cancel a pending plan (its digest stops being approvable; nothing was applied).
-cancel job:
-    @scutch cancel {{job}} --format json
-
-# Recent local runs.
-runs:
-    @scutch status --format json
-
-# --- workflows --------------------------------------------------------------
-
-# Run a feature as a workflow: scenarios in order, stopping at the first failure.
-workflow feature:
-    @scutch workflow {{feature}} --format json
-
-# Show a workflow's steps without running them.
-steps feature:
-    @scutch workflow {{feature}} --list --format json
-
-# --- interface & maintenance ------------------------------------------------
-
-# Human interface: the same transitions, as guided screens.
-ui:
-    @scutch ui
-
-# Run the test suite.
+# Run the tests.
 test:
-    @PYTHONPATH=. python -m pytest tests -q
+    @python -m pytest tests -q
 
-# Reset local run history and the ledger working copy (the seed is untouched).
+# Start over: the seed is never modified, so this is always safe.
 reset:
-    @rm -rf .scutch/runs/* .scutch/ledger.json
-    @echo "run history reset; fixtures/ untouched"
+    @rm -f ledger.json
+    @echo "ledger reset from the committed seed"

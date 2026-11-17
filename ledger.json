@@ -1,0 +1,28 @@
+{
+  "orders": [
+    {
+      "customer": "acme",
+      "id": "ord_a1",
+      "status": "fulfilled",
+      "total": 120.0
+    },
+    {
+      "customer": "acme",
+      "id": "ord_a2",
+      "status": "fulfilled",
+      "total": 80.5
+    },
+    {
+      "customer": "globex",
+      "id": "ord_b1",
+      "status": "placed",
+      "total": 42.0
+    },
+    {
+      "customer": "initech",
+      "id": "ord_c1",
+      "status": "cancelled",
+      "total": 15.0
+    }
+  ]
+}
