@@ -3,6 +3,8 @@ Feature: Customer permission repair
   It is a plan/apply operation: nothing is mutated until an approval bound to
   the plan digest arrives.
 
+  Covers: saleor.customer.repair
+
   Scenario: Repeating an already-applied repair
     Given the recording "scenario-nochange"
     And a fresh workspace

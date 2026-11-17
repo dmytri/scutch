@@ -7,6 +7,7 @@ renders and the same schemas ``run`` enforces.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -60,8 +61,13 @@ def examples(ws, name: str) -> dict[str, Any]:
             }
             for ex in op.examples
         ],
-        "spec": f"{op.name} behaviour is specified in specs/{op.name}.feature",
+        "spec": (str(spec.relative_to(ws.root)) if (spec := spec_for(ws, op)) else None),
     }
+
+
+def spec_root(ws) -> Path:
+    """Where features live, per the workspace's declared conventions."""
+    return ws.root / ws.conventions.features_root
 
 
 def spec_for(ws, op) -> Path | None:
@@ -70,10 +76,24 @@ def spec_for(ws, op) -> Path | None:
     Either ``specs/<name>.feature``, or any feature that names the operation —
     one feature may cover a family of related reads.
     """
-    exact = ws.root / "specs" / f"{op.name}.feature"
-    if exact.is_file():
-        return exact
-    for path in sorted((ws.root / "specs").glob("*.feature")):
+    root = spec_root(ws)
+    if not root.is_dir():
+        return None
+    # 1. a feature named after the operation, at any depth
+    for path in sorted(root.rglob(f"{op.name}.feature")):
+        return path
+    # 2. a file whose name is the operation's last segment (customer_repair)
+    leaf = op.name.split(".")[-1]
+    for path in sorted(root.rglob(f"{leaf}.feature")):
+        return path
+    # 3. a feature that declares it covers this operation
+    for path in sorted(root.rglob("*.feature")):
+        text = path.read_text()
+        covers = [line for line in text.splitlines() if line.strip().lower().startswith("covers:")]
+        if any(op.name in line for line in covers):
+            return path
+    # 4. last resort: any feature that names it
+    for path in sorted(root.rglob("*.feature")):
         if op.name in path.read_text():
             return path
     return None
@@ -140,6 +160,9 @@ def doctor(ws) -> dict[str, Any]:
     check("providers", all(p["ok"] for p in prov) if prov else True, prov)
 
     check("runs_dir_writable", _writable(ws.runs_dir))
+
+    # Declared conventions, each a failing check rather than a paragraph.
+    check_conventions(ws, check)
 
     # Reproducibility: a step's output must be diffable. Check only operations
     # with a declared example so the doctor stays fast and needs no fixtures.
@@ -235,3 +258,116 @@ def render_docs(ws, out_dir: Path | None = None) -> list[Path]:
         p.write_text("\n".join(lines))
         written.append(p)
     return written
+
+
+# --------------------------------------------------------------------------
+# Conventions
+#
+# Conventions an agent cannot be *told* are conventions it will not follow. Each
+# one below is a check with a failing workspace, so the loop is: run doctor, read
+# the failing check, fix it. The declarations live in scutch.toml so a workspace
+# states its own conventions rather than inheriting Scutch's opinions.
+
+def conventions(ws) -> Any:
+    """The workspace's declared conventions (see workspace.Conventions)."""
+    return ws.conventions
+
+
+SECRET_PATTERNS = [
+    re.compile(r"""(?i)\b(api[_-]?key|token|secret|password)\s*[:=]\s*["'][^"'{][^"']{7,}["']"""),
+    re.compile(r"\bsk-[A-Za-z0-9]{16,}\b"),
+    re.compile(r"\bghp_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bya29\.[A-Za-z0-9._-]{20,}\b"),
+    re.compile(r"\bBearer\s+[A-Za-z0-9._-]{20,}\b"),
+]
+
+
+def _sql_siblings(ws, op) -> list[Path]:
+    """The `.sql` file an operation declares, or one named after it.
+
+    An operation that computes over data names its query with
+    ``@operation(query="operations/x/y.sql")``. The file is then a standalone
+    artifact — runnable in `duckdb` by hand — and the operation is the guardrail
+    around it.
+    """
+    declared = getattr(op, "query", None)
+    if declared:
+        path = ws.root / declared
+        return [path] if path.is_file() else []
+    ops_dir = ws.root / "operations"
+    if not ops_dir.is_dir():
+        return []
+    mod = op.module.split(".")[-1]
+    stem = op.name.split(".")[-1]
+    found: set[Path] = set()
+    for pattern in (f"{mod}.sql", f"{stem}.sql"):
+        found.update(ops_dir.rglob(pattern))
+    return sorted(found)
+
+
+def check_conventions(ws, check) -> None:
+    """Enforce every declared convention. ``check`` is doctor's recorder.
+
+    Each violation is a failing check, not a paragraph in a document: an agent
+    that never reads the conventions still cannot pass without following them.
+    """
+    conv = ws.conventions
+
+    if conv.queries == "duckdb":
+        # An operation that claims to transform data must point at its .sql.
+        # `query=` is the declaration; the file must exist.
+        no_sql = [
+            op.name
+            for op in ws.registry.all()
+            if op.query and not (ws.root / op.query).is_file()
+        ]
+        check(
+            "queries_are_sql",
+            not no_sql,
+            no_sql or "every declared query file exists",
+        )
+
+    if conv.steps == "poe":
+        shell_steps: list[str] = []
+        for path in sorted((ws.root / "workflows").glob("*.y*ml")):
+            if "command/shell" in path.read_text():
+                shell_steps.append(path.name)
+        check(
+            "steps_are_poe",
+            not shell_steps,
+            shell_steps or "no command/shell steps",
+        )
+
+    if conv.secrets == "provider":
+        hits: list[dict[str, str]] = []
+        ops_dir = ws.root / "operations"
+        for file in (ops_dir.rglob("*.py") if ops_dir.is_dir() else []):
+            text = file.read_text()
+            for rx in SECRET_PATTERNS:
+                for m in rx.finditer(text):
+                    hits.append(
+                        {"file": str(file.relative_to(ws.root)), "match": m.group(0)[:24] + "…"}
+                    )
+        cfg = ws.root / "scutch.toml"
+        if cfg.is_file():
+            for rx in SECRET_PATTERNS:
+                for m in rx.finditer(cfg.read_text()):
+                    hits.append({"file": "scutch.toml", "match": m.group(0)[:24] + "…"})
+        check("no_inline_secrets", not hits, hits or "no credential-shaped literals found")
+
+    if conv.feature_is_workflow:
+        specs_dir = ws.root / conv.features_root
+        features = sorted(specs_dir.rglob("*.feature")) if specs_dir.is_dir() else []
+        unclaimed = [o.name for o in ws.registry.all() if spec_for(ws, o) is None]
+        flat = [str(f.relative_to(specs_dir)) for f in features if f.parent == specs_dir]
+        check(
+            "features_are_workflows" if flat else "features_bound",
+            not unclaimed and not flat,
+            {
+                "unclaimed_operations": unclaimed,
+                "features_outside_a_domain_folder": flat,
+                "features": len(features),
+            }
+            if (unclaimed or flat)
+            else f"{len(features)} feature(s), every operation claimed",
+        )

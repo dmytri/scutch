@@ -73,8 +73,10 @@ mutation Grant($id: ID!, $channel: String!, $permission: PermissionEnum!) {
 class GraphQLTransport:
     """Sends one GraphQL document. Live and replay differ only here."""
 
-    def __init__(self, endpoint: str, secret: str | None, replay: dict[str, Any] | None):
+    def __init__(self, endpoint: str, secret: str | None, replay: dict[str, Any] | None,
+                 root: Path | None = None):
         self.endpoint = endpoint
+        self._root = root or Path.cwd()
         self._secret = secret
         self._replay = replay
         self.sent: list[dict[str, Any]] = []
@@ -92,6 +94,11 @@ class GraphQLTransport:
                  "document": " ".join(document.split()), "variables": variables}
         self.sent.append(entry)
         self._log(entry)
+        # Workspace-level sink: a caller does not have to hold this instance to
+        # see what was sent. `scutch workflow` reads it for its wire assertions.
+        from scutch.providers import record_wire
+
+        record_wire(self._root, entry)
         if self._replay is not None:
             return self._from_replay(document, variables)
         return self._over_http(document, variables)
@@ -168,6 +175,7 @@ class SaleorApi:
             endpoint,
             resolution.secret,
             replay_data(resolution) if resolution.mode == "replay" else None,
+            resolution.root,
         )
         self.endpoint = endpoint
 

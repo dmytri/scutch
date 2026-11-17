@@ -12,3 +12,13 @@ notes = "https://saleor.example/graphql/"
 require_approval_for = ["plan_apply", "mutate"]
 runs_root = ".scutch/runs"
 artifacts_root = ".scutch/artifacts"
+
+# The shape this workspace insists on. `scutch new` scaffolds from it and
+# `scutch doctor` enforces it, so the two can never disagree.
+[conventions]
+features_root = "specs"
+steps_module = "specs.steps"
+queries = "duckdb"        # a transformation is a .sql file, runnable by hand
+steps = "poe"             # steps run in-process (Poe script task), so all seams double
+secrets = "provider"      # never a literal; declare a Provider handle
+feature_is_workflow = true

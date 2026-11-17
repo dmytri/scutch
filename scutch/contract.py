@@ -89,7 +89,11 @@ class Operation:
     intended_effects: tuple[str, ...]
     artifacts: tuple[str, ...]
     plan_fn: Callable[..., Any] | None = None
+    query: str | None = None
     description: str = ""
+    #: Set by the workspace loader once it has resolved specs/.
+    spec_path: str | None = None
+
     deprecated: str | None = None
     replaced_by: str | None = None
 
@@ -195,8 +199,13 @@ class Operation:
             "source": {
                 "module": self.module,
                 "implementation": self.implementation,
-                "spec": f"specs/{self.name}.feature",
+                "query": self.query,
+                # The feature that specifies this operation, resolved by the
+                # loader (a feature may live in a domain folder or cover a
+                # family of operations).
+                "spec": self.spec_path,
             },
+            "query": self.query,
             "external_reads": list(self.external_reads),
             "intended_effects": list(self.intended_effects),
             "artifacts": list(self.artifacts),
@@ -231,6 +240,8 @@ class Operation:
                 problems.append(f"idempotency key {key!r} is not an input parameter")
         if self.effect != "read" and not self.idempotency_key:
             problems.append("consequential operations must declare an idempotency key")
+        if self.query and not self.query.endswith(".sql"):
+            problems.append(f"query {self.query!r} must be a .sql file")
         if is_private(self.result_type):
             problems.append("result type cannot be private")
         for ex in self.examples:
@@ -341,9 +352,11 @@ def operation(
     external_reads: Iterable[str] = (),
     intended_effects: Iterable[str] = (),
     artifacts: Iterable[str] = (),
+    query: str | None = None,
     deprecated: str | None = None,
     replaced_by: str | None = None,
     statuses: Iterable[str] = (),
+    transforms_data: bool = False,
     registry: "Registry | None" = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Declare an operation. Metadata here plus the signature is the contract."""
@@ -368,6 +381,7 @@ def operation(
         op = Operation(
             name=name,
             plan_fn=plan_fn,
+            query=query,
             version=version,
             summary=summary,
             fn=fn,

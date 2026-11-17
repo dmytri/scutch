@@ -19,6 +19,15 @@ REPO = Path(__file__).resolve().parents[1]
 PYTHON = sys.executable
 
 
+def _ignore_caches(directory: str, names: list[str]) -> set[str]:
+    """Never copy bytecode into a test workspace.
+
+    A stale .pyc shadows an edited source file, so the workspace would run code
+    that no longer exists in the repo — a test failure that looks like a bug.
+    """
+    return {n for n in names if n == "__pycache__" or n.endswith(".pyc")}
+
+
 def _copy_workspace(dest: Path) -> Path:
     dest.mkdir(parents=True, exist_ok=True)
     for name in ("scutch.toml", "justfile"):
@@ -28,7 +37,7 @@ def _copy_workspace(dest: Path) -> Path:
     for d in ("operations", "providers", "fixtures", "specs"):
         src = REPO / d
         if src.is_dir():
-            shutil.copytree(src, dest / d)
+            shutil.copytree(src, dest / d, ignore=_ignore_caches)
     (dest / ".scutch" / "runs").mkdir(parents=True, exist_ok=True)
     (dest / ".scutch" / "artifacts").mkdir(parents=True, exist_ok=True)
     return dest
@@ -70,7 +79,7 @@ class Cli:
         # workspace (a mutant, a broken operation) must survive a reset.
         self._pristine = workspace.parent / (workspace.name + ".pristine")
         if not self._pristine.exists():
-            shutil.copytree(workspace, self._pristine)
+            shutil.copytree(workspace, self._pristine, ignore=_ignore_caches)
         self.env = {
             **os.environ,
             "PATH": f"{shim}{os.pathsep}{os.environ['PATH']}",
@@ -87,7 +96,7 @@ class Cli:
                 shutil.rmtree(child)
             else:
                 child.unlink()
-        shutil.copytree(self._pristine, self.workspace, dirs_exist_ok=True)
+        shutil.copytree(self._pristine, self.workspace, dirs_exist_ok=True, ignore=_ignore_caches)
 
     @property
     def wire_file(self) -> Path:

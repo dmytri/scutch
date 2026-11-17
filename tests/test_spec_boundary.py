@@ -34,7 +34,7 @@ def _harness(workspace, tmp_path):
 def _scenario(name_fragment: str):
     from tests.gherkin import parse_feature
 
-    for scenario in parse_feature(REPO / "specs" / "api.customer_repair.feature"):
+    for scenario in parse_feature(REPO / "specs" / "saleor" / "api_customer_repair.feature"):
         if name_fragment in scenario.name:
             return scenario
     raise AssertionError(f"no scenario matching {name_fragment!r}")
@@ -84,7 +84,7 @@ def test_falsified_recorded_data_is_not_caught(tmp_path):
     exe.chmod(0o755)
     cli = Cli(ws, shim)
     scenario = [
-        s for s in parse_feature(REPO / "specs" / "api.customer_repair.feature")
+        s for s in parse_feature(REPO / "specs" / "saleor" / "api_customer_repair.feature")
         if "documented variables" in s.name
     ][0]
     execute(scenario, Steps(cli), LIBRARY)  # must not raise
@@ -155,7 +155,7 @@ def test_auth_header_is_not_asserted(workspace, tmp_path):
     exe.chmod(0o755)
     cli = Cli(workspace, shim)
     scenario = [
-        s for s in parse_feature(REPO / "specs" / "api.customer_repair.feature")
+        s for s in parse_feature(REPO / "specs" / "saleor" / "api_customer_repair.feature")
         if "no credential appears" in " ".join(t for _, t in s.steps)
     ][0]
     execute(scenario, Steps(cli), LIBRARY)  # still passes: headers are invisible to replay

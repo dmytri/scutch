@@ -132,6 +132,26 @@ def load_implementation(name: str, root: Path) -> Callable[[Resolution], Any] | 
     return fn
 
 
+def wire_log(root: Path) -> list[dict[str, Any]]:
+    """Requests the providers have sent in this workspace, in order.
+
+    A workspace-level sink rather than per-instance state, so a caller does not
+    have to hold the exact Resolution the runner used.
+    """
+    return list(_WIRE.get(str(root), []))
+
+
+def record_wire(root: Path, entry: dict[str, Any]) -> None:
+    _WIRE.setdefault(str(root), []).append(entry)
+
+
+def clear_wire(root: Path) -> None:
+    _WIRE.pop(str(root), None)
+
+
+_WIRE: dict[str, list[dict[str, Any]]] = {}
+
+
 def replay_data(res: Resolution) -> dict[str, Any]:
     """Recorded HTTP exchanges, merged from the provider's fixture directory.
 

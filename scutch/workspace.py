@@ -33,6 +33,32 @@ class Policy:
     )
 
 
+@dataclasses.dataclass(frozen=True)
+class Conventions:
+    """The shape a workspace insists on.
+
+    Declared in ``scutch.toml`` so that ``scutch new`` scaffolds it and
+    ``scutch doctor`` enforces it from one source. A convention that lives only
+    in prose is a convention an agent can ignore and still pass.
+    """
+
+    #: Where feature files live, relative to the workspace root.
+    features_root: str = "specs"
+    #: Where step definitions live (importable by both the CLI and tests).
+    steps_module: str = "specs.steps"
+    #: A query is a DuckDB `.sql` file beside its operation.
+    queries: str = "duckdb"
+    #: How steps are invoked: "poe" (in-process script task) or "cli".
+    steps: str = "poe"
+    #: Secrets are declared as provider handles, never literals.
+    secrets: str = "provider"
+    #: One feature = one workflow: scenarios run in order, stop on failure.
+    feature_is_workflow: bool = True
+
+    def to_json(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
 @dataclasses.dataclass
 class Workspace:
     root: Path
@@ -40,8 +66,13 @@ class Workspace:
     policy: Policy
     registry: Registry
     providers: dict[str, ProviderConfig]
+    conventions: Conventions = dataclasses.field(default_factory=Conventions)
 
     # -- paths ------------------------------------------------------------
+
+    @property
+    def features_dir(self) -> Path:
+        return self.root / self.conventions.features_root
 
     @property
     def runs_dir(self) -> Path:
@@ -85,6 +116,7 @@ class Workspace:
                 "secrets": "provider handles only; never request credential values",
                 "artifacts": "restricted by default; only declared artifacts are citable",
             },
+            "conventions": self.conventions.to_json(),
             "interfaces": {
                 "json": "stdout only; diagnostics on stderr; never blocks on a prompt",
                 "ui": "scutch ui",
@@ -158,7 +190,24 @@ def load_workspace(root: Path | str | None = None) -> Workspace:
     finally:
         _restore_registry(saved)
 
-    return Workspace(root, config, policy, registry, providers)
+    conv_cfg = config.get("conventions", {})
+    known = {f.name for f in dataclasses.fields(Conventions)}
+    unknown = set(conv_cfg) - known
+    if unknown:
+        raise ContractError(
+            f"unknown convention(s) in scutch.toml: {sorted(unknown)}",
+            hint=f"known: {sorted(known)}",
+        )
+    conventions = Conventions(**conv_cfg)
+
+    workspace = Workspace(root, config, policy, registry, providers, conventions)
+    # Resolve each operation's spec once, so every projection names the same file.
+    from .discovery import spec_for
+
+    for op in registry.all():
+        found = spec_for(workspace, op)
+        op.spec_path = str(found.relative_to(root)) if found else None
+    return workspace
 
 
 def _swap_registry(new: Registry) -> Registry:

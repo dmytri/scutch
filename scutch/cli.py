@@ -362,7 +362,7 @@ def specs_cmd(
     _emit(
         {
             "kind": "scutch.specs/v1",
-            "features": sorted(p.name for p in specs_dir.glob("*.feature")) if specs_dir.is_dir() else [],
+            "features": sorted(str(p.relative_to(specs_dir)) for p in specs_dir.rglob("*.feature")) if specs_dir.is_dir() else [],
             "scenarios": [
                 {"feature": s.feature, "name": s.name, "steps": len(s.steps)}
                 for s in scenarios
@@ -371,6 +371,62 @@ def specs_cmd(
         },
         format,
     )
+
+
+@app.command("workflow")
+def workflow_cmd(
+    feature: str = typer.Argument(..., help="Feature file, or a name under specs/"),
+    list_only: bool = typer.Option(False, "--list", help="Show the scenarios without running"),
+    keep_going: bool = typer.Option(False, "--keep-going", help="Diagnosis only: do not stop at the first failure"),
+    format: str = typer.Option("json", "--format", "-f"),
+) -> None:
+    """Run a feature as a workflow: steps in order, stop at the first failure.
+
+    A feature *is* the workflow. Its scenarios are its steps, and they share one
+    run, so a later step sees what an earlier one did. Every provider must be
+    doubled: a feature run never reaches the network.
+    """
+    from . import gherkin
+    from .steps import LIBRARY, Steps, InProcessHarness
+
+    ws = _ws()
+    root = ws.features_dir
+    candidate = (ws.root / feature).resolve() if not Path(feature).is_absolute() else Path(feature)
+    if not candidate.is_file():
+        candidate = root / feature
+        if not candidate.suffix:
+            candidate = candidate.with_suffix(".feature")
+    if not candidate.is_file():
+        matches = sorted(root.rglob(f"*{feature}*.feature")) if root.is_dir() else []
+        if len(matches) != 1:
+            _fail(UsageError(
+                f"no feature {feature!r}",
+                hint=f"candidates: {[str(m.relative_to(root)) for m in matches]}" if matches else f"see {root}",
+            ))
+        candidate = matches[0]
+
+    scenarios = gherkin.parse_feature(candidate)
+    if list_only:
+        _emit(
+            {
+                "kind": "scutch.workflow/v1",
+                "feature": str(candidate.relative_to(ws.root)),
+                "scenarios": [s.name for s in scenarios],
+                "count": len(scenarios),
+            },
+            format,
+        )
+        return
+
+    harness = InProcessHarness(ws)
+    run = gherkin.run_feature(scenarios, Steps(harness), LIBRARY, keep_going=keep_going)
+    report = {
+        "kind": "scutch.workflow/v1",
+        "feature": str(candidate.relative_to(ws.root)),
+        **run.to_json(),
+    }
+    _emit(report, format)
+    raise typer.Exit(0 if run.ok else 1)
 
 
 @app.command("verify")

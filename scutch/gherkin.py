@@ -51,7 +51,7 @@ def parse_feature(path: Path | str) -> list[Scenario]:
 
 def discover(directory: Path | str) -> list[Scenario]:
     out: list[Scenario] = []
-    for path in sorted(Path(directory).glob("*.feature")):
+    for path in sorted(Path(directory).rglob("*.feature")):
         out.extend(parse_feature(path))
     return out
 
