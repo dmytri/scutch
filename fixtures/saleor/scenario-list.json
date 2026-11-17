@@ -1,0 +1,61 @@
+{
+  "exchanges": [
+    {
+      "name": "scenario-list.1",
+      "request": {
+        "document": "query Customers($n: Int!) { users(first: $n) { edges { node { id email channelPermissions { channel { slug } permissions } } } } }",
+        "variables": {
+          "n": 20
+        }
+      },
+      "response": {
+        "users": {
+          "edges": [
+            {
+              "node": {
+                "channelPermissions": [
+                  {
+                    "channel": {
+                      "slug": "retail"
+                    },
+                    "permissions": [
+                      "read_orders"
+                    ]
+                  }
+                ],
+                "email": "ada@example.com",
+                "id": "cust_123"
+              }
+            },
+            {
+              "node": {
+                "channelPermissions": [],
+                "email": "grace@example.com",
+                "id": "cust_456"
+              }
+            },
+            {
+              "node": {
+                "channelPermissions": [
+                  {
+                    "channel": {
+                      "slug": "retail"
+                    },
+                    "permissions": [
+                      "read_orders",
+                      "manage_orders"
+                    ]
+                  }
+                ],
+                "email": "alan@example.com",
+                "id": "cust_789"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "note": "Recorded HTTP exchanges. Scrubbed of credentials; safe to commit.",
+  "provider": "scenario-list"
+}
