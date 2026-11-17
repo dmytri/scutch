@@ -198,7 +198,14 @@ def test_applying_a_plan_supersedes_its_preview(cli):
     assert applied["result"]["status"] == "applied"
     assert any(n.startswith("superseded_previews=") for n in applied["notes"])
 
-    old, _, _ = cli.scutch("status", preview["job_id"], "--format", "json")
+    # The job names the invocation, so `status <job>` now reports the applied
+    # run — the consequential state, which is what a caller means. The preview
+    # is addressed by its own run id.
+    job, _, _ = cli.scutch("status", preview["job_id"], "--format", "json")
+    assert job["phase"] == "applied"
+    assert job["run_id"] == applied["run_id"]
+
+    old, _, _ = cli.scutch("status", preview["run_id"], "--format", "json")
     assert old["phase"] == "superseded"
     assert old["superseded_by"] == applied["run_id"]
     assert old["next"]["argv"][:2] == ["scutch", "status"]
@@ -242,7 +249,7 @@ def test_cancel_refuses_an_applied_plan(cli):
     )
     assert applied["result"]["status"] == "applied"
 
-    refused, code, _ = cli.scutch("cancel", applied["job_id"], "--format", "json")
+    refused, code, _ = cli.scutch("cancel", applied["run_id"], "--format", "json")
     assert refused["status"] == "complete"
     assert refused["error"]["code"] == "already_applied"
     assert code == 11
@@ -253,3 +260,38 @@ def test_cancel_requires_a_pending_plan(cli):
     refused, code, _ = cli.scutch("cancel", read["job_id"], "--format", "json")
     assert refused["error"]["code"] == "not_cancellable"
     assert code == 12
+
+
+def test_unused_provider_does_not_break_other_operations(cli):
+    """A provider with no recording must not fail operations that don't use it.
+
+    Found in saleor-bi: declaring a replay provider before recording anything
+    made every operation fail, because resolution was eager.
+    """
+    cfg = cli.workspace / "scutch.toml"
+    cfg.write_text(cfg.read_text().replace(
+        '[policy]', '[providers.unrecorded]\nmode = "replay"\ndata = "fixtures/does-not-exist"\n\n[policy]'
+    ))
+    cli.recording = "scenario-list"
+    env, _, _ = cli.scutch(
+        "run", "saleor.customer.list", "--input", "@-", "--format", "json", stdin={"limit": 20}
+    )
+    assert env["status"] == "complete", env.get("error")
+
+
+def test_operation_that_needs_a_broken_provider_still_fails(cli):
+    """Lazy resolution must not become no resolution: the provider the
+    operation declares is still validated, and its failure is the operation's."""
+    cfg = cli.workspace / "scutch.toml"
+    cfg.write_text(
+        cfg.read_text().replace(
+            'data = "fixtures/saleor"', 'data = "fixtures/does-not-exist"'
+        )
+    )
+    env, code, _ = cli.scutch(
+        "run", "saleor.customer.list", "--input", "@-", "--format", "json", stdin={"limit": 1}
+    )
+    assert env["status"] == "failed", env
+    assert env["error"]["code"] == "provider_error"
+    assert "does not exist" in env["error"]["message"]
+    assert code == 6
