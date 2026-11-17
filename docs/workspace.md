@@ -55,7 +55,7 @@ def action(customer_id: CustomerId, *, api) -> Report:
     ...
 ```
 
-**Contract rules enforced at registration and by `scutch validate`:**
+**Contract rules enforced at registration and by `scutch doctor`:**
 
 - `name` matches `[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+`.
 - The return type is a dataclass — it becomes the public result schema.
@@ -125,38 +125,10 @@ Undeclared artifact names raise a contract error. Artifacts land in
 `.scutch/artifacts/<run_id>/` and appear in the envelope as
 `{"name", "path", "restricted": true, "bytes"}` — a reference, not content.
 
-## Recordings
+## Conventions
 
-```bash
-scutch record saleor --endpoint <url> --operation <name> --input '<json>' [--approve]
-```
-
-Writes `fixtures/<provider>/<cassette>.json` containing scrubbed request/response
-pairs. `--approve` is required when the operation mutates, so recording can never
-silently change an environment you did not intend to touch. Re-record whenever a
-query changes: replay refuses unknown requests, which is what makes the cassette
-a contract rather than a convenience.
-
-## A feature is a workflow
-
-Scenarios in one feature run **in file order against one workspace**, and the run
-**stops at the first failure**. Later scenarios therefore see what earlier ones
-did, and a dependent step never runs on broken state. That is what makes a
-feature a procedure rather than a checklist of independent tests.
-
-The counterpart: a scenario that must not inherit state says so, declaratively.
-
-```gherkin
-Scenario: Repeating an already-applied repair
-  Given a fresh workspace          # restore this workspace's snapshot
-  And the recording "scenario-repair"
-```
-
-`Given a fresh workspace` restores the workspace **as provisioned**, not as the
-repo is now — so a test that deliberately breaks a workspace is not silently
-un-broken by a reset.
-
-`--keep-going` exists for diagnosing a suite; a real run stops.
+`scutch.toml` declares the shape a workspace insists on; `scutch doctor` enforces
+it and `scutch new` scaffolds from it. See README "Conventions, enforced".
 
 ## Features (Gherkin)
 

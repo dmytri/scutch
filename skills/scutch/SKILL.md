@@ -53,6 +53,27 @@ JSON
 `--input` also accepts a literal JSON string or a file path. JSON goes to
 stdout; diagnostics go to stderr. Nothing blocks waiting for a prompt.
 
+## Workflows
+
+A feature file *is* a workflow: its scenarios are steps, run in order against one
+workspace, stopping at the first failure.
+
+```bash
+scutch workflow --list specs/saleor/master_sync.feature   # the steps
+scutch workflow specs/saleor/master_sync.feature          # run them
+scutch workflow master_sync                               # by name
+```
+
+`--keep-going` is for diagnosing a suite; a real run stops, because a later step
+must not run on broken state.
+
+## Conventions
+
+`scutch context` publishes them; `scutch doctor` enforces them. If doctor fails,
+fix the named check — do not work around it. `scutch new operation NAME` scaffolds
+the compliant shape (decorator, `.sql` when `--query`, plan stub, feature), and
+an unfinished scaffold fails doctor until you fill it in.
+
 ## Reproducibility
 
 An envelope is a function of the invocation: the same operation with the same

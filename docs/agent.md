@@ -75,7 +75,7 @@ else yields `approval_mismatch` with the current digest and nothing applied.
 - Without an explicit key, Scutch derives one from the canonical inputs, so an
   accidental double-click cannot double-mutate.
 - A run interrupted mid-apply leaves `phase: applying`. `scutch status` then
-  returns recovery commands; `scutch recover` reports the recorded intent.
+  returns recovery commands; the run record holds the recorded intent.
   Neither repeats the effect — verify external state first.
 
 ## MCP and other projections

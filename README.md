@@ -66,7 +66,6 @@ or grab a release binary).
 scutch context                 # what is this workspace?
 scutch list                    # what can I call?
 scutch describe saleor.customer.repair
-scutch examples saleor.customer.repair
 scutch doctor                  # is every documented capability servable?
 ```
 
@@ -120,7 +119,7 @@ def plan_repair(customer_id, permission, channel="retail", *, api) -> Plan:
 
 The signature supplies parameters, defaults and JSON Schema; `Annotated[...,
 field(...)]` adds constraints; `Annotated[..., private()]` keeps a result field
-out of every envelope. `scutch validate` fails if the implementation and the
+out of every envelope. `scutch doctor` fails if the implementation and the
 declared contract disagree.
 
 See [`docs/workspace.md`](docs/workspace.md) for the full authoring guide and
@@ -158,79 +157,27 @@ idempotency and recovery, and the authoring rules — with
 The skill is a *guide to the same contract*: it adds no capabilities, and
 `scutch describe` remains authoritative for any individual operation.
 
-## Recordings, not fixtures
+## Conventions, enforced
 
-Contract tests replay HTTP, not an application model. `scutch record` runs an
-operation against a real endpoint once and writes the request/response pairs to
-`fixtures/<provider>/<name>.json`; `mode = "replay"` then serves them back with
-no network and no token.
+A convention an agent cannot be *told* is a convention it will ignore. Each one
+declared in `scutch.toml` is a failing check in `scutch doctor`, so the loop is:
+run doctor, read the failing check, fix it.
 
-```bash
-scutch record saleor --endpoint https://shop.example/graphql/ \
-  --operation saleor.customer.repair --input '{"customer_id":"cust_456","permission":"read_orders"}' --approve
-```
+| convention | what it means |
+|---|---|
+| `queries = "duckdb"` | a transformation is a `.sql` file beside its operation, runnable by hand |
+| `steps = "poe"` | a step is a Poe **script** task: in-process, so http/exec/provider are all doubleable |
+| `secrets = "provider"` | never a literal; declare a provider handle and let the runtime resolve it |
+| `feature_is_workflow` | scenarios run in order against one workspace and stop at the first failure |
 
-Why at the socket rather than the provider: doubling the *provider* would stub
-out the adapter, which is exactly where the API assumptions live — query text,
-variable names, error mapping. A test that fakes the adapter cannot fail when the
-GraphQL document is wrong. Replay keeps the document real and only replays the
-response.
-
-Consequences worth knowing:
-
-- **One cassette per scenario.** A merged directory lets one scenario's requests
-  shadow another's; `SCUTCH_REPLAY=<name>` binds a scenario to one recording.
-- **An unknown request fails loudly** — never falls back to a plausible answer.
-  A changed query is a test failure, not a green run.
-- **Preconditions come from the recording.** `Given customer "x" has ...` reads
-  the cassette, so a scenario states what the API was believed to hold.
-- **An empty plan records no mutation**, because the runtime never enters the
-  apply function in that case.
-
-What replay cannot prove: rate limits, partial failures, eventual consistency,
-auth expiry. Those need a live sandbox run.
-
-## Reproducibility
-
-An envelope is a function of the invocation. Same operation, same canonical
-input ⇒ same envelope, apart from `run_id` (the attempt) and `timing`.
-
-`job_id` is *derived* from the invocation rather than random, which is what
-makes a step's stdout diffable, hashable and cacheable. Without it, every run of
-every step produces a unique artifact and "did this run change anything?" has no
-answer.
-
-```bash
-scutch verify saleor.customer.list --input '{}'
-# {"reproducible": true, "envelope_digest": "sha256:59a1f9ef…"}
-```
-
-This is about the *workflow*, not the source. A query returning different rows
-tomorrow is a new input, not nondeterminism. Pin what varies — an `as_of`, a
-window, a cost budget — and the decision over it stays reproducible.
-
-`scutch doctor` checks reproducibility for every operation that declares an
-example, so a field carrying a clock or a random id fails there rather than
-silently making every artifact unique.
-
-## What the specs prove
-
-A feature states what the workflow *does to the outside world* and how the
-caller continues. It fails when that drifts — a dropped mutation, a plan that
-claims work it will not do, a mistyped query.
-
-It does not verify the API underneath. Measured: falsifying every recorded email
-passes 19/19 scenarios; removing the `Authorization` header passes too. Specs
-assert the workflow against a recorded environment, not the service's real
-behaviour — that needs a live recording and a reviewed diff.
-
-See [`docs/workspace.md`](docs/workspace.md#what-a-feature-proves--and-what-it-does-not).
+`scutch new` scaffolds from the same declarations, so the compliant shape is the
+easy one — and an unfinished scaffold fails doctor by name.
 
 ## Verification
 
 ```bash
-pytest            # 96 tests: contract, lifecycle, Gherkin, TUI, acceptance
-scutch validate   # contracts and specs agree
+pytest            # 102 tests: contract, lifecycle, Gherkin, TUI, acceptance
+scutch doctor     # contracts, conventions, fixtures and reproducibility
 scutch doctor     # every documented capability is servable
 ```
 

@@ -26,10 +26,13 @@ class Policy:
     allow_private_in_artifacts: bool = True
     bootstrap: str = (
         "Run `scutch context --format json` to discover this repository. "
-        "Run `scutch describe NAME --format json` before invoking an operation. "
+        "Run `scutch workflow --list <feature>` to see a workflow's steps, and "
+        "`scutch describe NAME --format json` before invoking an operation. "
         "Follow the returned `next.argv` and `next.input` exactly. "
         "Never request credential values or treat restricted artifacts as agent input. "
-        "Mutations require approval bound to the returned plan digest."
+        "Mutations require approval bound to the returned plan digest. "
+        "Conventions are enforced: `scutch doctor` names every violation, and "
+        "`scutch new` scaffolds the compliant shape."
     )
 
 
