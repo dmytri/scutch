@@ -65,12 +65,29 @@ class Cli:
         self.workspace = workspace
         self.shim = shim
         self.recording: str | None = None
+        # Snapshot at provisioning, so `reset` restores the workspace as it was
+        # handed to this test — not as the repo is now. A test that mutates the
+        # workspace (a mutant, a broken operation) must survive a reset.
+        self._pristine = workspace.parent / (workspace.name + ".pristine")
+        if not self._pristine.exists():
+            shutil.copytree(workspace, self._pristine)
         self.env = {
             **os.environ,
             "PATH": f"{shim}{os.pathsep}{os.environ['PATH']}",
             "PYTHONPATH": str(REPO),
             "COLUMNS": "120",
         }
+
+    def reset(self) -> None:
+        """Restore this workspace to its provisioned state."""
+        for child in list(self.workspace.iterdir()):
+            if child.name in ("scutch.toml", "justfile"):
+                continue
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+        shutil.copytree(self._pristine, self.workspace, dirs_exist_ok=True)
 
     @property
     def wire_file(self) -> Path:

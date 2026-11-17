@@ -31,6 +31,7 @@ Feature: Customer permission repair
 
   Scenario: Repeating an already-applied repair
     Given the recording "scenario-nochange"
+    And a fresh workspace
     And customer "cust_123" already has permission "read_orders" on channel "retail"
     When I preview the permission repair
     Then the envelope status is "complete"
@@ -40,6 +41,7 @@ Feature: Customer permission repair
 
   Scenario: A missing permission requires approval bound to a digest
     Given the recording "scenario-repair"
+    And a fresh workspace
     And customer "cust_456" is missing permission "read_orders" on channel "retail"
     When I preview the permission repair
     Then the envelope status is "needs_approval"
@@ -50,6 +52,7 @@ Feature: Customer permission repair
 
   Scenario: The published next argv applies the plan exactly once
     Given the recording "scenario-repair"
+    And a fresh workspace
     And customer "cust_456" is missing permission "read_orders" on channel "retail"
     When I preview the permission repair
     And I follow the published next argv
@@ -61,6 +64,7 @@ Feature: Customer permission repair
 
   Scenario: An approval for a different plan is refused
     Given the recording "scenario-repair"
+    And a fresh workspace
     And customer "cust_456" is missing permission "read_orders" on channel "retail"
     When I preview the permission repair
     And I approve digest "sha256:0000"
@@ -76,6 +80,7 @@ Feature: Customer permission repair
 
   Scenario: A fresh process continues from the envelope alone
     Given the recording "scenario-repair"
+    And a fresh workspace
     And customer "cust_456" is missing permission "read_orders" on channel "retail"
     When I preview the permission repair
     And the process restarts
@@ -85,6 +90,7 @@ Feature: Customer permission repair
 
   Scenario: A cancelled plan cannot be approved
     Given the recording "scenario-repair"
+    And a fresh workspace
     And customer "cust_456" is missing permission "read_orders" on channel "retail"
     When I preview the permission repair
     And I cancel the pending plan

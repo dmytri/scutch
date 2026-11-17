@@ -18,6 +18,7 @@ Feature: Customer inspection
 
   Scenario: A repair result withholds its raw provider payload
     Given the recording "scenario-nochange"
+    And a fresh workspace
     And customer "cust_123" already has permission "read_orders" on channel "retail"
     When I preview the permission repair
     Then the envelope reports a redacted field

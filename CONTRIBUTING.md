@@ -10,7 +10,7 @@ without relying on any previous conversation.
 python -m venv .venv && . .venv/bin/activate
 pip install -e . pytest pytest-asyncio
 just doctor    # is every documented capability servable?
-just test      # 89 tests, ~15s
+just test      # 76 tests, ~15s
 ```
 
 ## Adding an operation

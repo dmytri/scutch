@@ -112,6 +112,75 @@ def execute(scenario: Scenario, steps: Any, library: Sequence[Step]) -> None:
             raise UndefinedStep(f"undefined step in {scenario.name!r}: {keyword} {text}")
 
 
+@dataclass
+class StepFailure:
+    """The scenario that failed, and why."""
+
+    scenario: str
+    error: BaseException
+
+
+@dataclass
+class FeatureRun:
+    """The result of running a feature as a workflow.
+
+    A feature is ordered: scenarios run in file order against one run, so a step
+    can build on what an earlier step did. It **stops at the first failure**,
+    because the scenarios are a procedure, not a checklist — a later step that
+    depends on an earlier one must not run on broken state.
+    """
+
+    feature: str
+    ran: list[str] = field(default_factory=list)
+    skipped: list[str] = field(default_factory=list)
+    failure: StepFailure | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.failure is None
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "feature": self.feature,
+            "ok": self.ok,
+            "ran": self.ran,
+            "skipped": self.skipped,
+            "failed_at": self.failure.scenario if self.failure else None,
+            "error": None
+            if self.failure is None
+            else {"type": type(self.failure.error).__name__, "message": str(self.failure.error)},
+        }
+
+
+def run_feature(
+    scenarios: Sequence[Scenario],
+    steps: Any,
+    library: Sequence[Step],
+    *,
+    keep_going: bool = False,
+) -> FeatureRun:
+    """Execute a feature's scenarios in order, as one workflow.
+
+    Stops at the first failing scenario (the default): a workflow step that
+    writes to a sheet must not be followed by steps that assume it succeeded.
+    ``keep_going`` is for diagnosing a suite, never for a real run.
+    """
+    run = FeatureRun(feature=scenarios[0].feature if scenarios else "")
+    for index, scenario in enumerate(scenarios):
+        if run.failure is not None and not keep_going:
+            run.skipped.append(scenario.name)
+            continue
+        run.ran.append(scenario.name)  # attempted, whether or not it passed
+        try:
+            execute(scenario, steps, library)
+        except BaseException as exc:  # noqa: BLE001 - recorded, then re-raised by the caller
+            run.failure = StepFailure(scenario.name, exc)
+            if not keep_going:
+                run.skipped.extend(s.name for s in scenarios[index + 1 :])
+                break
+    return run
+
+
 def coverage(scenarios: Iterable[Scenario], library: Sequence[Step]) -> dict[str, list[str]]:
     """Steps no library entry matches — a pre-flight check before running."""
     unresolved: dict[str, list[str]] = {}

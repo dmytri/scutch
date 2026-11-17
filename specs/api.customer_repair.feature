@@ -6,6 +6,7 @@ Feature: Customer repair over the API
 
   Scenario: Previewing prepares the request and sends no mutation
     Given the recording "scenario-repair"
+    And a fresh workspace
     And customer "cust_456" is missing permission "read_orders" on channel "retail"
     When I preview the permission repair
     Then the envelope status is "needs_approval"
@@ -15,6 +16,7 @@ Feature: Customer repair over the API
 
   Scenario: Approval sends exactly one mutation with the documented variables
     Given the recording "scenario-repair"
+    And a fresh workspace
     And customer "cust_456" is missing permission "read_orders" on channel "retail"
     When I preview the permission repair
     And I follow the published next argv
@@ -27,6 +29,7 @@ Feature: Customer repair over the API
 
   Scenario: Repeating an approved invocation sends no further mutation
     Given the recording "scenario-repair"
+    And a fresh workspace
     And customer "cust_456" is missing permission "read_orders" on channel "retail"
     When I preview the permission repair
     And I follow the published next argv
@@ -36,6 +39,7 @@ Feature: Customer repair over the API
 
   Scenario: A repair already satisfied sends no mutation at all
     Given the recording "scenario-nochange"
+    And a fresh workspace
     And customer "cust_123" already has permission "read_orders" on channel "retail"
     When I preview the permission repair
     Then the envelope status is "complete"

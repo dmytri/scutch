@@ -137,6 +137,27 @@ silently change an environment you did not intend to touch. Re-record whenever a
 query changes: replay refuses unknown requests, which is what makes the cassette
 a contract rather than a convenience.
 
+## A feature is a workflow
+
+Scenarios in one feature run **in file order against one workspace**, and the run
+**stops at the first failure**. Later scenarios therefore see what earlier ones
+did, and a dependent step never runs on broken state. That is what makes a
+feature a procedure rather than a checklist of independent tests.
+
+The counterpart: a scenario that must not inherit state says so, declaratively.
+
+```gherkin
+Scenario: Repeating an already-applied repair
+  Given a fresh workspace          # restore this workspace's snapshot
+  And the recording "scenario-repair"
+```
+
+`Given a fresh workspace` restores the workspace **as provisioned**, not as the
+repo is now — so a test that deliberately breaks a workspace is not silently
+un-broken by a reset.
+
+`--keep-going` exists for diagnosing a suite; a real run stops.
+
 ## Features (Gherkin)
 
 Behaviour future maintainers must understand goes in `specs/*.feature`. A

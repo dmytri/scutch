@@ -34,7 +34,9 @@ class Steps:
         self.customer: str | None = None
         self.permission: str | None = None
         self.channel: str = "retail"
-        self.idem: str = "gherkin-fixed-key"
+        self.idem_base: str = "gherkin"
+        self._resets: int = 0
+        self.idem: str = "gherkin-0"
         self.env: dict = {}
         self.cancelled_digest: str | None = None
         # Every CLI invocation appends its request log here (see conftest shim),
@@ -109,6 +111,29 @@ class Steps:
         return [r for r in self.wire if r.get("kind") == "query"]
 
     # -- Given -----------------------------------------------------------
+
+    def given_fresh_workspace(self) -> None:
+        """Reset to the committed state.
+
+        A feature is a workflow: scenarios share a workspace so a step can build
+        on the last one. A scenario that must *not* inherit that state says so,
+        here — declaratively, with no flag and no per-test magic.
+        """
+        from tests.conftest import _copy_workspace
+
+        # Restore from the workspace's own snapshot, not from the repo: a test
+        # that mutates the workspace must not be silently un-mutated by a reset.
+        # The run store is included, so this scenario cannot inherit an applied
+        # record from the last one and replay instead of apply.
+        self.cli.reset()
+        self.envelopes.clear()
+        self.returncodes.clear()
+        self.wire.clear()
+        self.cancelled_digest = None
+        # The idempotency key names an intent. A fresh workspace is a new
+        # intent, so reusing one across a reset would be a false conflict.
+        self._resets += 1
+        self.idem = f"{self.idem_base}-{self._resets}"
 
     def given_recording(self, name: str) -> None:
         """Bind the scenario to one recorded HTTP session."""
@@ -211,15 +236,14 @@ class Steps:
         assert self.last["status"] == "complete"
 
     def then_no_mutation_happened(self) -> None:
-        """No applied run record for this invocation may exist."""
-        runs = list((self.cli.workspace / ".scutch" / "runs").glob("run_*.json"))
-        applied = [
-            json.loads(p.read_text())
-            for p in runs
-        ]
-        assert not [r for r in applied if r["phase"] == "applied" and r["operation"] == "saleor.customer.repair"], (
-            "an apply happened when none was approved"
-        )
+        """No mutation crossed the wire in *this* scenario.
+
+        Asserted against the request log rather than the run store: a feature is
+        a workflow, so earlier scenarios may legitimately have applied the same
+        operation. The wire log is reset by `Given a fresh workspace`, which is
+        exactly the boundary "this scenario" means.
+        """
+        assert self.mutations() == [], [m["document"][:60] for m in self.mutations()]
 
     def then_exactly_one_change(self) -> None:
         assert len(self.last["plan"]["changes"]) == 1, self.last["plan"]
@@ -375,6 +399,7 @@ class Steps:
 # step vocabulary
 
 LIBRARY = [
+    step(r"a fresh workspace", "given_fresh_workspace"),
     step(r'the recording "([^"]+)"', "given_recording"),
     step(r'customer "([^"]+)" already has permission "([^"]+)" on channel "([^"]+)"', "given_customer_has"),
     step(r'customer "([^"]+)" is missing permission "([^"]+)" on channel "([^"]+)"', "given_customer_missing"),
