@@ -110,3 +110,10 @@ no account, no network required for any test.
 No workflow engine, no scheduler, no durable execution. If a job needs
 distributed retries, a real engine can call these functions — they are ordinary
 Python that happens to take `io`.
+
+## Running the tests
+
+```console
+$ pip install -e '.[dev]'
+$ python -m pytest tests -q
+```

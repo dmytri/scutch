@@ -5,6 +5,9 @@ description = "A folder of plain functions, one seam to the world."
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
 [project.scripts]
 scutch = "scutch.cli:main"
 
