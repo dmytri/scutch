@@ -1,5 +1,7 @@
-# local run records, applied fixture state, artifacts — inspectable, not shared
-.scutch/
+# The working ledger is derived from scutch/data/seed.json on first run.
+# It is local state, not source: delete it to start over.
+ledger.json
+
 # python
 __pycache__/
 *.py[cod]

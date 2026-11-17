@@ -1,8 +1,0 @@
-# Scutch needs no configuration. This file exists only because the demo's
-# operations read `ledger.json`, and that file has to come from somewhere.
-#
-# `seed` is copied to `ledger.json` on first run and never modified again, so a
-# demo can be re-run from a clean state by deleting ledger.json.
-[ledger]
-seed = "scutch/data/seed.json"
-working = "ledger.json"

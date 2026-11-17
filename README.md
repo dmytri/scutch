@@ -132,20 +132,48 @@ extra answer is still sitting in `io.answers` and the test can see it.
 
 ## Layout
 
+Everything, in full. This is the whole repository:
+
 ```text
-operations/**/*.py        the catalogue: one function per file, `io` first
-scutch/io.py              the seam
-scutch/run.py             plan / apply, over one function
-scutch/catalogue.py       discover operations from the folder
-scutch/cli.py             list, describe, run, ui, prompt
-scutch/browser.py         the Textual browser (screens, forms, tables)
-scutch/data/seed.json     demo data; copied to ledger.json, never modified
-tests/                    the seam, the lifecycle, the continuation, the CLI
+operations/orders/        the catalogue — one plain function per file
+  list.py                 orders.list        look at the ledger
+  fulfil.py               orders.fulfil      one order
+  fulfil_all.py           orders.fulfil_all  every placed order, one plan
+  notify.py               orders.notify      write + POST, two effects
+
+scutch/
+  io.py                   the seam: read / write / exec / http
+  run.py                  plan and apply, two passes over one function
+  catalogue.py            discover operations from the folder
+  cli.py                  list, describe, run, ui, prompt
+  browser.py              the Textual browser
+  tui.py                  the same flow, line by line
+  data/seed.json          the demo's starting data
+
+tests/                    seam, lifecycle, continuation, browser, cli
 ```
 
-There is no registry, no configuration beyond the demo's seed path, no daemon,
-no account, and no network required for any test. The only dependency is Textual,
-and only the browser needs it.
+### Where is `ledger.json`?
+
+It is not in the repo — it is created on first run by copying
+`scutch/data/seed.json`, then written to by the operations. It is local state:
+
+```console
+$ cat scutch/data/seed.json        # what you start with
+$ cat ledger.json                  # what you have now
+$ rm ledger.json                   # start over (the seed is untouched)
+```
+
+Four orders: `ord_a1` and `ord_b1` are `placed`, `ord_a2` is `fulfilled`,
+`ord_c1` is `cancelled`. `orders.fulfil ord_a1` moves the first one.
+
+### There are no `.feature` files
+
+An earlier version of this repo ran Gherkin features as workflows. That layer is
+gone: an operation is a function, its tests are ordinary pytest tests in
+`tests/`, and the browser is the human interface. If you are looking for
+`specs/*.feature`, they were part of the design that was replaced — see the
+commit message on `62c20d2`.
 
 ## Non-goals
 
