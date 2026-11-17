@@ -9,10 +9,11 @@ The whole interface:
 """
 
 from .catalogue import Operation, UnknownOperation, discover, get
-from .io import IO, Missing, ScutchError, Unanswered, Unapproved, UnknownEffect, digest, key
+from .io import IO, Failed, Missing, ScutchError, Unanswered, Unapproved, UnknownEffect, digest, key
 from .run import apply, plan, run
 
 __all__ = [
+    "Failed",
     "IO",
     "Missing",
     "Operation",

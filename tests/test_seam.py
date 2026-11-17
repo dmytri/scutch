@@ -51,3 +51,33 @@ def test_effects_exclude_reads(tmp_path):
     io("exec", argv=["x"])
     io("http", url="https://x")
     assert [json.loads(e)["kind"] for e in io.effects] == ["exec", "http"]
+
+
+def test_a_missing_file_is_a_sentence_not_a_traceback(tmp_path):
+    from scutch import Missing
+
+    with pytest.raises(Missing) as exc:
+        IO(root=tmp_path)("read", path="nope.json")
+    assert "no file nope.json" in str(exc.value)
+
+
+def test_a_failing_command_reports_its_exit_code(tmp_path):
+    from scutch import Failed
+
+    with pytest.raises(Failed) as exc:
+        IO(root=tmp_path)("exec", argv=["sh", "-c", "echo boom >&2; exit 3"])
+    assert "exited 3" in str(exc.value)
+    assert "boom" in str(exc.value)
+
+
+def test_an_unreachable_url_is_a_sentence(tmp_path):
+    from scutch import Failed
+
+    with pytest.raises(Failed) as exc:
+        IO(root=tmp_path)("http", url="https://nothing.invalid/x", method="POST", body="")
+    assert "cannot reach" in str(exc.value)
+
+
+def test_a_read_with_the_double_never_touches_the_disk(tmp_path):
+    io = IO(root=tmp_path, answers=["canned"])
+    assert io("read", path="absent.json") == "canned"

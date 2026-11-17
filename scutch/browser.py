@@ -37,22 +37,31 @@ from .run import apply as apply_plan
 from .run import plan as make_plan
 
 
+#: One icon per effect kind. The icon names the *kind*, which is the part a
+#: person needs to recognise without reading the verb.
+ICON = {"write": "📝", "exec": "⚙️", "http": "🌐", "read": "👁️"}
+#: One colour per effect kind, so the kind reads at a glance in the review list.
+TINT = {"write": "#fea62b", "exec": "#b48ead", "http": "#4ebf71"}
+
+
 def effect_lines(effects: list[str]) -> list[str]:
-    """The plan in words. Reads the kinds it knows; states anything else as is."""
+    """The plan in words, one line per effect, with its kind icon."""
     if not effects:
         return ["nothing — it is already in that state."]
     out = []
     for effect in effects:
         change = json.loads(effect)
         kind = change.get("kind")
+        icon = ICON.get(kind, "•")
+        tint = TINT.get(kind, "#c5c8c6")
         if kind == "write":
-            out.append(f"write {change['path']}")
+            out.append(f"[{tint}]{icon}[/{tint}] write [bold]{change['path']}[/bold]")
         elif kind == "exec":
-            out.append("run " + " ".join(change["argv"]))
+            out.append(f"[{tint}]{icon}[/{tint}] run [bold]{' '.join(change['argv'])}[/bold]")
         elif kind == "http":
-            out.append(f"{change.get('method', 'GET')} {change['url']}")
+            out.append(f"[{tint}]{icon}[/{tint}] [bold]{change.get('method', 'GET')}[/bold] {change['url']}")
         else:
-            out.append(effect)
+            out.append(f"{icon} {effect}")
     return out
 
 
@@ -77,6 +86,17 @@ def records(result: Any) -> tuple[list[str], list[list[str]]]:
     return ["value"], [[str(result)]]
 
 
+TONE = {"fulfilled": "green", "placed": "yellow", "cancelled": "red"}
+
+
+def _paint(cell: str, is_status: bool) -> Any:
+    """Colour a status cell by its meaning. Everything else is left alone."""
+    if not is_status:
+        return cell
+    tone = TONE.get(cell)
+    return f"[{tone}]{cell}[/{tone}]" if tone else cell
+
+
 class ScutchApp(App):
     """Pick an operation, fill it in, review the effects, apply."""
 
@@ -84,17 +104,42 @@ class ScutchApp(App):
 
     CSS = """
     Screen { background: $surface; }
-    #rail { width: 34; border-right: solid $primary; }
+
+    Header { background: $primary-darken-2; color: $text; text-style: bold; }
+    Footer { background: $primary-darken-3; }
+
+    #rail {
+        width: 34;
+        border-right: thick $accent;
+        background: $panel;
+        padding: 0 1;
+    }
+    #rail .title { color: $accent; text-style: bold; margin: 1 0; }
+    ListView { background: $panel; }
+    ListItem { padding: 0 1; }
+    ListItem.--highlight { background: $accent 30%; }
+
     #main { padding: 1 2; }
-    .title { text-style: bold; margin-bottom: 1; }
+    #body { margin-bottom: 1; }
+
+    .label { color: $accent; text-style: bold; margin-top: 1; }
     .muted { color: $text-muted; }
-    .safe { color: $success; }
+    .ok { color: $success; text-style: bold; }
     .warn { color: $warning; }
     .bad { color: $error; }
-    Input { margin-bottom: 1; }
+    .digest { color: $text-muted; background: $boost; padding: 0 1; }
+
+    Input { border: tall $accent; margin-bottom: 1; }
+    Input:focus { border: tall $success; }
+
     #buttons { height: auto; margin-top: 1; }
     Button { margin-right: 2; }
-    DataTable { height: 1fr; }
+    Button.-primary { background: $accent; color: $text; text-style: bold; }
+    Button.-success { background: $success; color: $text; text-style: bold; }
+
+    DataTable { height: 1fr; border: round $accent; }
+    DataTable > .datatable--header { background: $accent 40%; text-style: bold; }
+    DataTable > .datatable--cursor { background: $accent 60%; }
     """
 
     BINDINGS = [
@@ -138,6 +183,10 @@ class ScutchApp(App):
             doc = (self.operations[name].describe()["doc"] or "").splitlines()
             rail.append(ListItem(Label(f"{name}\n[dim]{doc[0] if doc else ''}[/dim]")))
         await self.show_home()
+        # Highlight the first entry, so Enter works before the user presses a key.
+        if len(rail.children):
+            rail.index = 0
+        rail.focus()
 
     # -- screens -----------------------------------------------------------
 
@@ -165,9 +214,9 @@ class ScutchApp(App):
         await self._clear()
         count = len(self.operations)
         self._body(
-            "[b]Scutch[/b]\n\n"
-            f"{count} operation(s) in this workspace. Pick one on the left.\n\n"
-            "[dim]Each one plans before it acts: you see the effects and the digest, "
+            "[bold #fea62b]⚡ Scutch[/bold #fea62b]\n\n"
+            f"[bold]{count}[/bold] operations in this workspace. Pick one on the left.\n\n"
+            "[dim]Each one plans before it acts — you see the effects and the digest, "
             "then approve or go back.[/dim]"
         )
 
@@ -181,8 +230,8 @@ class ScutchApp(App):
         await self._clear()
         described = operation.describe()
         self._body(
-            f"[b]{operation.name}[/b]\n\n{described['doc']}\n\n"
-            + ("[green]Reads only.[/green]" if not described["parameters"] and "list" in operation.name else "")
+            f"[bold #fea62b]{operation.name}[/bold #fea62b]\n\n{described['doc']}\n\n"
+            "[dim]Fill what it needs, then press Enter.[/dim]"
         )
         form = self.query_one("#form", Vertical)
         for parameter in operation.parameters:
@@ -196,34 +245,52 @@ class ScutchApp(App):
         buttons.mount(Button("Back", id="back"))
         if self.inputs:
             next(iter(self.inputs.values())).focus()
+        else:
+            self.query_one("#buttons", Horizontal).query(Button).first().focus()
 
     async def show_review(self) -> None:
         await self._clear()
         assert self.envelope is not None
         lines = "\n".join("  • " + line for line in effect_lines(self.envelope["effects"]))
+        count = len(self.envelope["effects"])
+        plural = "" if count == 1 else "s"
+        digest = self.envelope["digest"]
+        # A digest is one token; break it into two readable halves rather than
+        # letting the terminal wrap it at an arbitrary column.
+        half = len(digest) // 2
+        shown = f"{digest[:half]}\n{digest[half:]}"
         self._body(
-            "[b]Review — nothing has happened yet[/b]\n\n"
-            f"[b]This will:[/b]\n{lines}\n\n"
-            f"[dim]digest {self.envelope['digest']}[/dim]"
+            f"[bold #4ebf71]🔎 Review[/bold #4ebf71] [dim]— nothing has happened yet[/dim]\n\n"
+            f"[bold]This will make {count} change{plural}:[/bold]\n{lines}\n\n"
+            f"[dim]digest[/dim]\n[#8a8a8a]{shown}[/#8a8a8a]"
         )
         buttons = self.query_one("#buttons", Horizontal)
         if self.envelope["effects"]:
             buttons.mount(Button("Apply", id="apply", variant="success"))
             buttons.mount(Button("Back", id="back"))
+            buttons.query(Button).first().focus()
         else:
             buttons.mount(Button("Back", id="back"))
+            buttons.query(Button).first().focus()
 
     async def show_result(self, applied: bool = True) -> None:
         await self._clear()
         assert self.envelope is not None
-        self._body("[b]Applied[/b]" if applied else "[b]Result[/b] [dim](read only)[/dim]")
+        if applied:
+            self._body("[bold #4ebf71]✅ Applied[/bold #4ebf71]")
+        else:
+            self._body(
+                "[bold #0178d4]👁️ Result[/bold #0178d4] "
+                "[dim]read only — nothing was changed[/dim]"
+            )
         columns, rows = records(self.envelope.get("result"))
         grid = self.query_one("#grid", DataTable)
         if columns:
             grid.display = True
             grid.add_columns(*columns)
+            status_at = columns.index("status") if "status" in columns else None
             for row in rows:
-                grid.add_row(*row)
+                grid.add_row(*[_paint(cell, status_at == i) for i, cell in enumerate(row)])
         self.query_one("#buttons", Horizontal).mount(Button("Back", id="back"))
 
     # -- transitions -------------------------------------------------------
@@ -283,6 +350,19 @@ class ScutchApp(App):
 
     # -- events ------------------------------------------------------------
 
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Enter in a field: go to the next one, or plan when it is the last.
+
+        Without this, typing a value and pressing Enter does nothing, which is
+        the first thing a person tries.
+        """
+        parameters = list(self.inputs)
+        current = parameters.index(event.input.id[3:]) if event.input.id else -1
+        if current >= 0 and current + 1 < len(parameters):
+            self.inputs[parameters[current + 1]].focus()
+            return
+        await self.plan_now()
+
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "plan":
             await self.plan_now()
@@ -298,6 +378,7 @@ class ScutchApp(App):
                 await self.open(self.operation)
                 return
         await self.show_home()
+        self.query_one("#ops", ListView).focus()
 
     async def action_refresh(self) -> None:
         self.operations = catalogue.discover(self.root)
@@ -307,6 +388,10 @@ class ScutchApp(App):
             doc = (self.operations[name].describe()["doc"] or "").splitlines()
             rail.append(ListItem(Label(f"{name}\n[dim]{doc[0] if doc else ''}[/dim]")))
         await self.show_home()
+        # Highlight the first entry, so Enter works before the user presses a key.
+        if len(rail.children):
+            rail.index = 0
+        rail.focus()
 
 
 def run(root: Path | None = None) -> int:

@@ -23,6 +23,7 @@ import dataclasses
 import hashlib
 import json
 import subprocess
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -46,6 +47,14 @@ class Unapproved(ScutchError):
 
 class UnknownEffect(ScutchError):
     """An ``io`` kind outside the four."""
+
+
+class Failed(ScutchError):
+    """An effect ran and the world refused: no route, non-zero exit, bad reply.
+
+    Translated at the seam so an operation reads as ordinary code and a caller
+    gets one sentence instead of a traceback from inside urllib or subprocess.
+    """
 
 
 class Missing(ScutchError):
@@ -109,14 +118,25 @@ class IO:
         if not self.execute:
             return ""
         if kind == "exec":
-            return subprocess.run(args["argv"], capture_output=True, text=True).stdout
+            done = subprocess.run(args["argv"], capture_output=True, text=True)
+            if done.returncode != 0:
+                raise Failed(
+                    f"{' '.join(args['argv'])} exited {done.returncode}"
+                    + (f": {done.stderr.strip()[:200]}" if done.stderr.strip() else "")
+                )
+            return done.stdout
         request = urllib.request.Request(
             args["url"],
             data=args.get("body", "").encode() or None,
             method=args.get("method", "GET"),
         )
-        with urllib.request.urlopen(request, timeout=20) as response:  # noqa: S310
-            return response.read().decode()
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:  # noqa: S310
+                return response.read().decode()
+        except urllib.error.HTTPError as exc:
+            raise Failed(f"{args['url']} answered {exc.code}") from None
+        except urllib.error.URLError as exc:
+            raise Failed(f"cannot reach {args['url']}: {exc.reason}") from None
 
     def _reply(self) -> Any:
         assert self.answers is not None

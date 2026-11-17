@@ -64,6 +64,19 @@ A read-only operation skips the review screen: its result is already known from
 the dry pass, so it goes straight to a `DataTable` you can scroll. Filter it by
 filling the form (`status = placed`) and pressing preview.
 
+Colour carries meaning rather than decoration:
+
+| | |
+|---|---|
+| 🟠 `#fea62b` | a write, and the selection in the rail |
+| 🟢 `#4ebf71` | an HTTP effect, and the review header |
+| 🟣 `#b48ead` | a command (`exec`) |
+| status cells | green fulfilled, yellow placed, red cancelled |
+
+`NO_COLOR=1` in your environment turns all of it off — Textual honours the
+standard, so the screen goes monochrome and `console.color_system` reports
+`None`. That is deliberate; clear the variable to see colour.
+
 `scutch prompt` is the same flow line by line, for a pipe or a dumb terminal.
 Both call `run.plan` and `run.apply` — the same functions the CLI calls — so the
 digest on screen is the digest the CLI would print. A test asserts that.
