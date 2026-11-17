@@ -8,51 +8,80 @@ from __future__ import annotations
 
 import json
 
-REPAIR = ["run", "saleor.customer.repair", "--format", "json"]
+FULFIL = ["run", "orders.fulfil", "--format", "json"]
+
+
+def _ledger(cli) -> dict:
+    """The working ledger the provider keeps after any mutation."""
+    return json.loads((cli.workspace / ".scutch" / "ledger.json").read_text())
+
+
+def _status_of(cli, order_id: str) -> str:
+    return next(o["status"] for o in _ledger(cli)["orders"] if o["id"] == order_id)
+
+
+def _runs(cli, phase: str) -> list[dict]:
+    rows = []
+    for path in (cli.workspace / ".scutch" / "runs").glob("run_*.json"):
+        record = json.loads(path.read_text())
+        if record["phase"] == phase:
+            rows.append(record)
+    return rows
 
 
 def test_envelopes_never_contain_credentials(cli):
     """Redaction: no provider secret, and nothing shaped like one, in any output."""
-    env, code, err = cli.scutch(*REPAIR, "--input", "@-", stdin={"customer_id": "cust_456", "permission": "read_orders"})
+    env, code, err = cli.scutch(*FULFIL, "--input", "@-", stdin={"order_id": "ord_a1"})
     text = json.dumps(env)
-    assert "SCUTCH_SALEOR_TOKEN" not in text
+    assert "SCUTCH_LEDGER_TOKEN" not in text
     assert "Bearer" not in text
-    assert "secret_present\": true" not in text
-    # provider handles only
-    assert env["input"] == {"channel": "retail", "customer_id": "cust_456", "permission": "read_orders"}
+    # the echoed input is the canonical input, nothing more
+    assert env["input"] == {"order_id": "ord_a1"}
 
 
 def test_private_result_fields_are_withheld(cli):
-    env, _, _ = cli.scutch(
-        *REPAIR, "--input", "@-", stdin={"customer_id": "cust_123", "permission": "read_orders"}
+    """The ledger row carries keys the public result type does not declare.
+
+    `placed_at` and `customer` are stored per order; a result that leaked the
+    whole row would put them on stdout. The projection keeps only the declared
+    fields, so those internals never leave the process.
+    """
+    env, _, _ = cli.scutch(*FULFIL, "--input", "@-", stdin={"order_id": "ord_a1"})
+    assert env["status"] == "needs_approval"
+    env2, _, _ = cli.scutch(
+        *FULFIL,
+        "--input",
+        "@-",
+        "--idempotency-key",
+        "redact-1",
+        "--approve-plan",
+        env["plan"]["digest"],
+        stdin={"order_id": "ord_a1"},
     )
-    assert env["status"] == "complete"
-    assert env["result"]["status"] == "no_change"
-    assert "raw_response" not in env["result"]
-    assert "raw_response" in env["redacted"]
+    assert env2["status"] == "complete"
+    assert set(env2["result"]) == {"order_id", "status", "previous_status"}
+    assert "placed_at" not in json.dumps(env2["result"])
+    assert "customer" not in json.dumps(env2["result"])
 
 
-def test_missing_input_is_recoverable_from_envelope_alone(repair_world):
-    cli = repair_world
-    env, code, _ = cli.scutch(*REPAIR, "--input", "@-", stdin={"permission": "read_orders"})
+def test_missing_input_is_recoverable_from_envelope_alone(cli):
+    env, code, _ = cli.scutch(*FULFIL, "--input", "@-", stdin={})
     assert env["status"] == "needs_input"
     assert env["error"]["code"] == "missing_input"
-    assert env["error"]["details"]["missing"] == ["customer_id"]
-    assert env["next"]["argv"][:3] == ["scutch", "run", "saleor.customer.repair"]
+    assert env["error"]["details"]["missing"] == ["order_id"]
+    assert env["next"]["argv"][:3] == ["scutch", "run", "orders.fulfil"]
     # Filling the template with the returned canonical inputs + the missing
-    # field produces a valid transition: this customer needs the grant, so the
-    # next state is needs_approval with a plan and a digest.
-    follow = dict(env["next"]["input"], customer_id="cust_456")
+    # field produces a valid transition: a placed order needs the change, so
+    # the next state is needs_approval with a plan and a digest.
+    follow = dict(env["next"]["input"], order_id="ord_a1")
     env2, _, _ = cli.run(env["next"]["argv"], stdin=follow)
     assert env2["status"] == "needs_approval"
     assert env2["plan"]["digest"]
-    assert env2["next"]["input"]["customer_id"] == "cust_456"
+    assert env2["next"]["input"]["order_id"] == "ord_a1"
 
 
 def test_invalid_input_reports_violations(cli):
-    env, code, _ = cli.scutch(
-        *REPAIR, "--input", "@-", stdin={"customer_id": "nope", "permission": "read_orders"}
-    )
+    env, code, _ = cli.scutch(*FULFIL, "--input", "@-", stdin={"order_id": "nope"})
     assert env["status"] == "failed"
     assert env["error"]["code"] == "invalid_input"
     assert code == 4
@@ -60,60 +89,64 @@ def test_invalid_input_reports_violations(cli):
 
 
 def test_plan_digest_is_stable_and_input_sensitive(cli):
-    a, _, _ = cli.scutch(*REPAIR, "--input", "@-", stdin={"customer_id": "cust_456", "permission": "read_orders"})
-    b, _, _ = cli.scutch(*REPAIR, "--input", "@-", stdin={"customer_id": "cust_456", "permission": "read_orders"})
-    c, _, _ = cli.scutch(*REPAIR, "--input", "@-", stdin={"customer_id": "cust_456", "permission": "manage_orders"})
+    a, _, _ = cli.scutch(*FULFIL, "--input", "@-", stdin={"order_id": "ord_a1"})
+    b, _, _ = cli.scutch(*FULFIL, "--input", "@-", stdin={"order_id": "ord_a1"})
+    c, _, _ = cli.scutch(*FULFIL, "--input", "@-", stdin={"order_id": "ord_b1"})
     assert a["plan"]["digest"] == b["plan"]["digest"]
     assert a["plan"]["digest"] != c["plan"]["digest"]
 
 
 def test_approval_is_bound_to_the_digest(cli):
-    plan, _, _ = cli.scutch(*REPAIR, "--input", "@-", stdin={"customer_id": "cust_456", "permission": "read_orders"})
+    plan, _, _ = cli.scutch(*FULFIL, "--input", "@-", stdin={"order_id": "ord_a1"})
     bad, code, _ = cli.scutch(
-        *REPAIR,
+        *FULFIL,
         "--input",
         "@-",
         "--approve-plan",
         "sha256:" + "0" * 64,
-        stdin={"customer_id": "cust_456", "permission": "read_orders"},
+        stdin={"order_id": "ord_a1"},
     )
     assert bad["status"] == "needs_approval"
     assert bad["error"]["code"] == "approval_mismatch"
     assert code == 5
     # nothing applied yet
-    runs = [json.loads(p.read_text()) for p in (cli.workspace / ".scutch" / "runs").glob("run_*.json")]
-    assert not [r for r in runs if r["phase"] == "applied"]
+    assert _status_of(cli, "ord_a1") == "placed"
+    assert not _runs(cli, "applied")
 
 
-def test_apply_then_repeat_never_mutates_twice(repair_world):
-    cli = repair_world
-    payload = {"customer_id": "cust_456", "permission": "read_orders"}
-    plan, _, _ = cli.scutch(*REPAIR, "--input", "@-", "--idempotency-key", "k-fixed", stdin=payload)
+def test_apply_then_repeat_never_mutates_twice(cli):
+    payload = {"order_id": "ord_a1"}
+    plan, _, _ = cli.scutch(*FULFIL, "--input", "@-", "--idempotency-key", "k-fixed", stdin=payload)
     digest = plan["plan"]["digest"]
-    first, _, _ = cli.scutch(*REPAIR, "--input", "@-", "--idempotency-key", "k-fixed", "--approve-plan", digest, stdin=payload)
+    first, _, _ = cli.scutch(
+        *FULFIL, "--input", "@-", "--idempotency-key", "k-fixed", "--approve-plan", digest, stdin=payload
+    )
     assert first["status"] == "complete"
-    assert first["result"]["status"] == "applied"
+    assert first["result"]["status"] == "fulfilled"
+    assert first["result"]["previous_status"] == "placed"
 
-    # Exactly one mutation reached the wire, and the projector reported the
-    # state the API returned after it.
-    wire = cli.drain_wire()
-    assert len([w for w in wire if w["kind"] == "mutation"]) == 1
-    assert first["result"]["channel_permissions"] == [
-        {"channel": {"slug": "retail"}, "permissions": ["read_orders"]}
-    ]
+    # Exactly one mutation reached the ledger, and the result reports the state
+    # it moved to.
+    assert _status_of(cli, "ord_a1") == "fulfilled"
 
-    second, _, _ = cli.scutch(*REPAIR, "--input", "@-", "--idempotency-key", "k-fixed", "--approve-plan", digest, stdin=payload)
+    second, _, _ = cli.scutch(
+        *FULFIL, "--input", "@-", "--idempotency-key", "k-fixed", "--approve-plan", digest, stdin=payload
+    )
     assert second["status"] == "complete"
     assert any(n.startswith("replayed_from=") for n in second["notes"])
-    assert [w for w in cli.drain_wire() if w["kind"] == "mutation"] == []
+    assert second["replay"]["mutation_requested"] is False
+    # still exactly one applied run: the repeat did not take effect again
+    assert len(_runs(cli, "applied")) == 1
 
 
 def test_idempotency_key_reuse_with_different_inputs_is_refused(cli):
-    a = {"customer_id": "cust_456", "permission": "read_orders"}
-    plan, _, _ = cli.scutch(*REPAIR, "--input", "@-", "--idempotency-key", "k1", stdin=a)
-    cli.scutch(*REPAIR, "--input", "@-", "--idempotency-key", "k1", "--approve-plan", plan["plan"]["digest"], stdin=a)
-    b = {"customer_id": "cust_456", "permission": "manage_orders"}
-    conflict, code, _ = cli.scutch(*REPAIR, "--input", "@-", "--idempotency-key", "k1", stdin=b)
+    a = {"order_id": "ord_a1"}
+    plan, _, _ = cli.scutch(*FULFIL, "--input", "@-", "--idempotency-key", "k1", stdin=a)
+    cli.scutch(
+        *FULFIL, "--input", "@-", "--idempotency-key", "k1", "--approve-plan", plan["plan"]["digest"], stdin=a
+    )
+    b = {"order_id": "ord_b1"}
+    conflict, code, _ = cli.scutch(*FULFIL, "--input", "@-", "--idempotency-key", "k1", stdin=b)
     assert conflict["status"] == "failed"
     assert conflict["error"]["code"] == "idempotency_conflict"
     assert code == 9
@@ -128,9 +161,9 @@ def test_crash_between_plan_and_apply_leaves_a_recoverable_record(cli):
     rec = RunRecord(
         run_id=new_run_id(),
         job_id=new_job_id(),
-        operation="saleor.customer.repair",
+        operation="orders.fulfil",
         status="running",
-        input={"customer_id": "cust_456", "permission": "read_orders", "channel": "retail"},
+        input={"order_id": "ord_a1"},
         fingerprint="deadbeef",
         idempotency="k-fixed",
         plan_digest="sha256:x",
@@ -153,8 +186,8 @@ def test_crash_between_plan_and_apply_leaves_a_recoverable_record(cli):
 
 def test_a_new_process_sees_identical_descriptions(cli):
     """Self-description is registry-derived, so it cannot drift between runs."""
-    a, _, _ = cli.scutch("describe", "saleor.customer.repair", "--format", "json")
-    b, _, _ = cli.scutch("describe", "saleor.customer.repair", "--format", "json")
+    a, _, _ = cli.scutch("describe", "orders.fulfil", "--format", "json")
+    b, _, _ = cli.scutch("describe", "orders.fulfil", "--format", "json")
     assert a == b
     assert a["input_schema"] == b["input_schema"]
     assert a["result_schema"] == b["result_schema"]
@@ -182,7 +215,7 @@ def test_doctor_agrees_with_validate(cli):
 
 def test_status_of_a_pending_plan_returns_the_approval_command(cli):
     """A preview's job id must not be a dead end."""
-    preview, _, _ = cli.scutch(*REPAIR, "--input", "@-", stdin={"customer_id": "cust_456", "permission": "read_orders"})
+    preview, _, _ = cli.scutch(*FULFIL, "--input", "@-", stdin={"order_id": "ord_a1"})
     status, _, _ = cli.scutch("status", preview["job_id"], "--format", "json")
     assert status["status"] == "needs_approval"
     assert status["phase"] == "planned"
@@ -192,13 +225,13 @@ def test_status_of_a_pending_plan_returns_the_approval_command(cli):
 
 
 def test_applying_a_plan_supersedes_its_preview(cli):
-    payload = {"customer_id": "cust_456", "permission": "read_orders"}
-    preview, _, _ = cli.scutch(*REPAIR, "--input", "@-", stdin=payload)
+    payload = {"order_id": "ord_a1"}
+    preview, _, _ = cli.scutch(*FULFIL, "--input", "@-", stdin=payload)
     applied, _, _ = cli.scutch(
-        *REPAIR, "--input", "@-", "--idempotency-key", "sup-1",
+        *FULFIL, "--input", "@-", "--idempotency-key", "sup-1",
         "--approve-plan", preview["plan"]["digest"], stdin=payload,
     )
-    assert applied["result"]["status"] == "applied"
+    assert applied["result"]["status"] == "fulfilled"
     assert any(n.startswith("superseded_previews=") for n in applied["notes"])
 
     # The job names the invocation, so `status <job>` now reports the applied
@@ -217,8 +250,8 @@ def test_applying_a_plan_supersedes_its_preview(cli):
 
 def test_cancel_kills_a_pending_plan_digest(cli):
     """Cancellation must be a real transition, not a discarded envelope."""
-    payload = {"customer_id": "cust_456", "permission": "read_orders"}
-    preview, _, _ = cli.scutch(*REPAIR, "--input", "@-", stdin=payload)
+    payload = {"order_id": "ord_a1"}
+    preview, _, _ = cli.scutch(*FULFIL, "--input", "@-", stdin=payload)
     assert preview["status"] == "needs_approval"
     digest = preview["plan"]["digest"]
 
@@ -231,26 +264,26 @@ def test_cancel_kills_a_pending_plan_digest(cli):
     assert code == 0
 
     # the digest is now dead — and nothing was applied
-    stale, code2, _ = cli.scutch(*REPAIR, "--input", "@-", "--approve-plan", digest, stdin=payload)
+    stale, code2, _ = cli.scutch(*FULFIL, "--input", "@-", "--approve-plan", digest, stdin=payload)
     assert stale["status"] == "cancelled"
     assert stale["error"]["code"] == "plan_cancelled"
     assert code2 == 10
 
-    runs = [json.loads(p.read_text()) for p in (cli.workspace / ".scutch" / "runs").glob("run_*.json")]
-    assert not [r for r in runs if r["phase"] == "applied"]
+    assert _status_of(cli, "ord_a1") == "placed"
+    assert not _runs(cli, "applied")
 
     after, _, _ = cli.scutch("status", preview["job_id"], "--format", "json")
     assert after["phase"] == "cancelled"
 
 
 def test_cancel_refuses_an_applied_plan(cli):
-    payload = {"customer_id": "cust_456", "permission": "read_orders"}
-    preview, _, _ = cli.scutch(*REPAIR, "--input", "@-", stdin=payload)
+    payload = {"order_id": "ord_a1"}
+    preview, _, _ = cli.scutch(*FULFIL, "--input", "@-", stdin=payload)
     applied, _, _ = cli.scutch(
-        *REPAIR, "--input", "@-", "--idempotency-key", "c1",
+        *FULFIL, "--input", "@-", "--idempotency-key", "c1",
         "--approve-plan", preview["plan"]["digest"], stdin=payload,
     )
-    assert applied["result"]["status"] == "applied"
+    assert applied["result"]["status"] == "fulfilled"
 
     refused, code, _ = cli.scutch("cancel", applied["run_id"], "--format", "json")
     assert refused["status"] == "complete"
@@ -259,25 +292,26 @@ def test_cancel_refuses_an_applied_plan(cli):
 
 
 def test_cancel_requires_a_pending_plan(cli):
-    read, _, _ = cli.scutch("run", "saleor.customer.list", "--input", "@-", "--format", "json", stdin={})
+    read, _, _ = cli.scutch("run", "orders.list", "--input", "@-", "--format", "json", stdin={})
     refused, code, _ = cli.scutch("cancel", read["job_id"], "--format", "json")
     assert refused["error"]["code"] == "not_cancellable"
     assert code == 12
 
 
 def test_unused_provider_does_not_break_other_operations(cli):
-    """A provider with no recording must not fail operations that don't use it.
+    """A provider that cannot be resolved must not fail operations that don't use it.
 
     Found in saleor-bi: declaring a replay provider before recording anything
-    made every operation fail, because resolution was eager.
+    made every operation fail, because resolution was eager. `unrecorded` names
+    a cassette directory that does not exist, so resolving it would fail; the
+    point is that nothing resolves it.
     """
     cfg = cli.workspace / "scutch.toml"
     cfg.write_text(cfg.read_text().replace(
         '[policy]', '[providers.unrecorded]\nmode = "replay"\ndata = "fixtures/does-not-exist"\n\n[policy]'
     ))
-    cli.recording = "scenario-list"
     env, _, _ = cli.scutch(
-        "run", "saleor.customer.list", "--input", "@-", "--format", "json", stdin={"limit": 20}
+        "run", "orders.list", "--input", "@-", "--format", "json", stdin={"status": "placed"}
     )
     assert env["status"] == "complete", env.get("error")
 
@@ -288,13 +322,16 @@ def test_operation_that_needs_a_broken_provider_still_fails(cli):
     cfg = cli.workspace / "scutch.toml"
     cfg.write_text(
         cfg.read_text().replace(
-            'data = "fixtures/saleor"', 'data = "fixtures/does-not-exist"'
+            'data = "fixtures/orders.json"', 'data = "fixtures/does-not-exist"'
         )
     )
     env, code, _ = cli.scutch(
-        "run", "saleor.customer.list", "--input", "@-", "--format", "json", stdin={"limit": 1}
+        "run", "orders.list", "--input", "@-", "--format", "json", stdin={}
     )
     assert env["status"] == "failed", env
     assert env["error"]["code"] == "provider_error"
-    assert "does not exist" in env["error"]["message"]
-    assert code == 6
+    assert "does-not-exist" in env["error"]["message"]
+    # The provider resolves (the mode is local); the failure happens when the
+    # operation asks it for data, so it is the operation's failure (7), not a
+    # resolution failure (6).
+    assert code == 7

@@ -35,7 +35,7 @@ def test_poe_tasks_are_all_script_tasks():
 def test_steps_are_discoverable():
     out = subprocess.run(["poe", "-h"], cwd=REPO, capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
-    for name in ("customers", "repair", "gmv"):
+    for name in ("orders", "outstanding", "fulfil", "ga-token", "doctor"):
         assert name in out.stdout, f"{name} not listed by poe -h"
 
 

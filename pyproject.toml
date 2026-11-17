@@ -39,26 +39,14 @@ include = ["scutch", "tests", "specs", "docs", "fixtures", "operations", "provid
 # into a string and the assertion would become a grep.
 
 [tool.poe.tasks]
-customers = { script = "poe_steps:list_customers", help = "list customers" }
-ga-token = { script = "poe_steps:ga_token", help = "prove the gcloud call, as an argv list" }
+orders = { script = "poe_steps:list_orders", help = "list orders (a read step)" }
+outstanding = { script = "poe_steps:outstanding", help = "only what still needs doing" }
+ga-token = { script = "poe_steps:ga_token", help = "prove an exec call, as an argv list" }
 doctor = { script = "poe_steps:doctor", help = "run the convention checks" }
 
-[tool.poe.tasks.repair]
-script = "poe_steps:repair_customer"
-help = "preview a permission repair (needs approval)"
+[tool.poe.tasks.fulfil]
+script = "poe_steps:fulfil_order"
+help = "preview fulfilling one order (plans)"
 args = [
-  { name = "customer_id", positional = true, required = true },
-  { name = "permission", positional = true, required = true, choices = [
-    "read_orders", "manage_orders", "manage_products",
-  ] },
-  { name = "channel", default = "retail", choices = ["retail", "wholesale"] },
-]
-
-[tool.poe.tasks.gmv]
-script = "poe_steps:gmv_net_confirmed"
-help = "net-confirmed GMV from its inputs"
-args = [
-  { name = "net", positional = true, required = true },
-  { name = "confirmation", positional = true, required = true },
-  { name = "return_rate", default = "0.15" },
+  { name = "order_id", positional = true, required = true },
 ]

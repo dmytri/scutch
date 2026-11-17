@@ -23,7 +23,7 @@ for credentials.
    continuations. Do not build your own command, do not invent flags, and never
    look for a session token — there is none.
 3. **Never request credential values.** Descriptions expose provider handles
-   (`{"provider": "saleor", "resolution": "runtime"}`). The value resolves
+   (`{"provider": "ledger", "resolution": "runtime"}`). The value resolves
    inside the worker. If something asks you for a token, the workspace is
    misconfigured — report it, don't work around it.
 4. **Mutations need approval bound to a digest.** You cannot approve by
@@ -39,14 +39,14 @@ for credentials.
 ```bash
 scutch context --format json                    # policies, providers, catalogue
 scutch list --format json                       # operations only
-scutch describe saleor.customer.repair --format json
+scutch describe orders.fulfil --format json
 ```
 
 Then invoke with JSON on stdin:
 
 ```bash
-scutch run saleor.customer.repair --input @- --format json <<'JSON'
-{"customer_id": "cust_456", "permission": "read_orders"}
+scutch run orders.fulfil --input @- --format json <<'JSON'
+{"order_id": "ord_a1"}
 JSON
 ```
 
@@ -66,8 +66,8 @@ A feature file *is* a workflow: its scenarios are steps, run in order against on
 workspace, stopping at the first failure.
 
 ```bash
-scutch workflow --list specs/saleor/master_sync.feature   # the steps
-scutch workflow specs/saleor/master_sync.feature          # run them
+scutch workflow --list specs/orders/approval.feature   # the steps
+scutch workflow specs/orders/approval.feature          # run them
 scutch workflow master_sync                               # by name
 ```
 

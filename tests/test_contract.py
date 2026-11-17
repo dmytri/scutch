@@ -121,15 +121,13 @@ def test_input_schema_round_trips_through_jsonschema():
     from scutch.workspace import load_workspace
 
     ws = load_workspace(Path(__file__).resolve().parents[1])
-    op = ws.registry.get("saleor.customer.repair")
+    op = ws.registry.get("orders.fulfil")
     schema = op.input_schema()
-    jsonschema.validate({"customer_id": "cust_1", "permission": "read_orders"}, schema)
+    jsonschema.validate({"order_id": "ord_a1"}, schema)
     with pytest.raises(jsonschema.ValidationError):
-        jsonschema.validate({"customer_id": "nope", "permission": "read_orders"}, schema)
+        jsonschema.validate({"order_id": "nope"}, schema)
     with pytest.raises(jsonschema.ValidationError):
-        jsonschema.validate({"customer_id": "cust_1", "permission": "root"}, schema)
-    with pytest.raises(jsonschema.ValidationError):
-        jsonschema.validate({"customer_id": "cust_1", "permission": "read_orders", "extra": 1}, schema)
+        jsonschema.validate({"order_id": "ord_a1", "extra": 1}, schema)
 
 
 def test_result_schema_matches_projected_output():
@@ -137,7 +135,7 @@ def test_result_schema_matches_projected_output():
     from scutch.workspace import load_workspace
 
     ws = load_workspace(Path(__file__).resolve().parents[1])
-    op = ws.registry.get("saleor.customer.list")
-    res = op.result_type(customers=[], count=0)
+    op = ws.registry.get("orders.list")
+    res = op.result_type(orders=[], count=0)
     payload, _ = project(res)
     jsonschema.validate(payload, op.output_schema())

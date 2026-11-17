@@ -15,6 +15,7 @@ import contextlib
 import json
 import os
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +29,33 @@ class LocalHarness:
         self.ws = ws
         self.workspace = ws.root
         self.recording: str | None = None
-        self._pristine = pristine or (ws.root / ".scutch" / "pristine")
+        # The snapshot must live *outside* the workspace. A snapshot inside it
+        # is deleted by the very reset that needs it — a self-destruct in which
+        # the restore silently becomes a no-op and one scenario's mutation leaks
+        # into the next.
+        self._pristine = pristine or (Path(tempfile.mkdtemp(prefix="scutch-pristine-")) / "ws")
+        self._data_dirs = ("fixtures",)
+        self._snapshot()
+
+    def _snapshot(self) -> None:
+        """Record only what a run may write to, before any scenario can.
+
+        `fixtures` is mutable data; operations, providers and specs are inputs
+        and are never restored over — restoring them would undo an edit made
+        during the run for no reason.
+        """
+        if self._pristine.is_dir():
+            shutil.rmtree(self._pristine)
+        self._pristine.mkdir(parents=True, exist_ok=True)
+        for name in self._data_dirs:
+            src = self.workspace / name
+            if src.is_dir():
+                shutil.copytree(
+                    src,
+                    self._pristine / name,
+                    ignore=lambda d, names: {n for n in names if n == "__pycache__"},
+                    dirs_exist_ok=True,
+                )
 
     # -- the harness contract ---------------------------------------------
 
@@ -126,20 +153,34 @@ class LocalHarness:
         return rows
 
     def reset(self) -> None:
-        """Restore the workspace to its pristine snapshot, if one exists."""
-        if not self._pristine.is_dir():
-            # No snapshot: clear only the run store, which is what a reset means
-            # when the workspace is the live one.
-            runs = self.ws.runs_dir
-            if runs.is_dir():
-                for f in runs.glob("run_*.json"):
-                    f.unlink()
-            return
-        for child in list(self.workspace.iterdir()):
-            if child.name in ("scutch.toml", ".git"):
-                continue
-            shutil.rmtree(child) if child.is_dir() else child.unlink()
-        shutil.copytree(self._pristine, self.workspace, dirs_exist_ok=True)
+        """Return the mutable data and the run store to their starting state.
+
+        Two things are reset, and nothing else is touched:
+
+        * the data directories are replaced from the snapshot;
+        * the run store and any working copies are cleared, so this scenario
+          cannot inherit an applied record and replay instead of apply.
+
+        Operations, providers and specs are left alone: they are inputs to the
+        run, not state produced by it.
+        """
+        for name in getattr(self, "_data_dirs", ("fixtures",)):
+            live = self.workspace / name
+            saved = self._pristine / name
+            if live.is_dir():
+                shutil.rmtree(live)
+            if saved.is_dir():
+                shutil.copytree(saved, live)
+
+        runs = self.ws.runs_dir
+        if runs.is_dir():
+            for f in runs.glob("run_*.json"):
+                f.unlink()
+
+        # A provider may keep a working copy of its own (the ledger does). It is
+        # derived from the data above, so it must go with it.
+        for extra in (self.workspace / ".scutch" / "ledger.json",):
+            extra.unlink(missing_ok=True)
 
     # -- conveniences the steps use ---------------------------------------
 

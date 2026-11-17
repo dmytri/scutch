@@ -13,16 +13,17 @@ no daemon. The operation contract *is* the product.
 
 ```console
 $ scutch context --format json     # discover the workspace
-$ scutch describe saleor.customer.repair --format json
-$ scutch run saleor.customer.repair --input '{"customer_id":"cust_456","permission":"read_orders"}'
+$ scutch describe orders.fulfil --format json
+$ scutch run orders.fulfil --input '{"order_id":"ord_a1"}'
 {
   "kind": "scutch.envelope/v1",
   "status": "needs_approval",
-  "plan": {"changes": [{"kind": "permission.add", "value": "read_orders"}],
+  "plan": {"changes": [{"kind": "status.change", "target": "ord_a1",
+                        "value": "fulfilled"}],
            "digest": "sha256:3f13f66…"},
-  "next": {"argv": ["scutch","run","saleor.customer.repair","--input","@-", …,
+  "next": {"argv": ["scutch","run","orders.fulfil","--input","@-", …,
                     "--approve-plan","sha256:3f13f66…"],
-           "input": {"customer_id":"cust_456","permission":"read_orders","channel":"retail"}}
+           "input": {"order_id": "ord_a1"}}
 }
 ```
 
@@ -65,14 +66,14 @@ or grab a release binary).
 ```bash
 scutch context                 # what is this workspace?
 scutch list                    # what can I call?
-scutch describe saleor.customer.repair
+scutch describe orders.fulfil
 scutch doctor                  # is every documented capability servable?
 ```
 
 Read-only operations need no approval:
 
 ```bash
-scutch run saleor.customer.list --input '{}'
+scutch run orders.list --input '{}'
 ```
 
 ## Two interfaces, one lifecycle
@@ -97,8 +98,8 @@ agent would not.
 
 ```bash
 scutch ui                              # home: operations and workflows
-scutch ui saleor.customer.repair       # straight into one operation
-scutch ui customer_repair              # straight into a workflow
+scutch ui orders.fulfil                 # straight into one operation
+scutch ui approval                     # straight into a workflow
 ```
 
 ## Lifecycle
@@ -128,19 +129,18 @@ digest.
 from scutch import Change, Plan, Provider, operation, plan_for
 
 @operation(
-    name="saleor.customer.repair",
-    summary="Ensure a customer has one channel permission.",
+    name="orders.fulfil",
+    summary="Mark one placed order fulfilled.",
     effect="plan_apply",
-    credentials={"api": Provider("saleor")},
-    idempotency_key=["customer_id", "permission", "channel"],
+    credentials={"ledger": Provider("ledger")},
+    idempotency_key=["order_id"],
 )
-def repair_customer(customer_id: CustomerId, permission: Permission,
-                    channel: Channel = "retail", *, api) -> RepairReport:
-    ...   # ordinary Python
+def fulfil_order(order_id: OrderId, *, ledger) -> Fulfilment:
+    ...   # ordinary Python: the write path
 
-@plan_for("saleor.customer.repair")
-def plan_repair(customer_id, permission, channel="retail", *, api) -> Plan:
-    ...   # read path: returns Plan(changes=[...])
+@plan_for("orders.fulfil")
+def plan_fulfil(order_id: OrderId, *, ledger) -> Plan:
+    ...   # read path: returns Plan(changes=[...]), never mutates
 ```
 
 The signature supplies parameters, defaults and JSON Schema; `Annotated[...,
@@ -159,7 +159,7 @@ scutch.toml               providers + policy
 operations/**/*.py        ordinary typed functions, registered by decorator
 providers/*.py            the seam to an external service
 specs/*.feature           executable Gherkin for behaviours to preserve
-fixtures/<provider>/      recorded HTTP exchanges, one cassette per scenario
+fixtures/                 the demo's data seed (never mutated by a run)
 docs/generated/           regenerated from descriptors — never hand-edited
 .scutch/runs/             inspectable run records
 .scutch/artifacts/        run artifacts (restricted by default)

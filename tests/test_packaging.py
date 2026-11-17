@@ -45,31 +45,31 @@ def test_just_aliases_are_pipeable(cli, workspace):
     """Recipe output is clean JSON: no echoed command line, no stderr noise."""
     env = {**cli.env}
     proc = subprocess.run(
-        ["just", "customers"], capture_output=True, text=True, cwd=workspace, env=env
+        ["just", "orders"], capture_output=True, text=True, cwd=workspace, env=env
     )
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(proc.stdout)
     assert payload["status"] == "complete"
-    assert payload["result"]["count"] == 3
+    assert payload["result"]["count"] == 4
 
 
 @pytest.mark.skipif(not shutil.which("just"), reason="just not installed")
 def test_just_preview_and_apply_pair(cli, workspace):
     env = {**cli.env}
     preview = subprocess.run(
-        ["just", "customer-repair", "cust_456", "read_orders"],
+        ["just", "fulfil", "ord_a1"],
         capture_output=True, text=True, cwd=workspace, env=env,
     )
     plan = json.loads(preview.stdout)
     assert plan["status"] == "needs_approval"
 
     apply = subprocess.run(
-        ["just", "customer-repair-apply", "cust_456", "read_orders", "retail", plan["plan"]["digest"]],
+        ["just", "fulfil-apply", "ord_a1", plan["plan"]["digest"]],
         capture_output=True, text=True, cwd=workspace, env=env,
     )
     applied = json.loads(apply.stdout)
     assert applied["status"] == "complete"
-    assert applied["result"]["status"] == "applied"
+    assert applied["result"]["status"] == "fulfilled"
 
 
 @pytest.mark.skipif(not shutil.which("just"), reason="just not installed")

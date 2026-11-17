@@ -46,6 +46,9 @@ class Steps:
         # so assertions can be made on what crossed the transport boundary.
         self.wire: list[dict] = []
         self.recording: str | None = None
+        # The most recent invocation, so a step can repeat it exactly.
+        self.last_argv: list[str] | None = None
+        self.last_payload: dict | None = None
         self.cassette: dict | None = None
         #: Input supplied to the generic `When I run <operation>` step.
         self.inputs: dict = {}
@@ -60,57 +63,20 @@ class Steps:
     def statuses(self) -> list[str]:
         return [e.get("status") for e in self.envelopes]
 
-    def _exchanges(self) -> list[dict]:
-        """Every recorded exchange the workspace has, across providers."""
-        out: list[dict] = []
-        root = self.cli.workspace / "fixtures"
-        if not root.is_dir():
-            return out
-        for f in sorted(root.rglob("*.json")):
-            out.extend(json.loads(f.read_text()).get("exchanges", []))
-        return out
-
-    def recorded_customer(self, customer: str) -> dict | None:
-        """The customer object as the recordings say it is, before any mutation.
-
-        Preconditions are read from the cassette so a scenario states what the
-        API was believed to hold — not what a mutable seed happens to contain.
-        """
-        for ex in self._exchanges():
-            if "mutation" in ex["request"]["document"]:
-                continue
-            user = (ex.get("response") or {}).get("user")
-            if user and user.get("id") == customer:
-                return user  # first read wins: the state before any mutation
-        return None
-
-    def recorded_permissions(self, customer: str, channel: str) -> list[str]:
-        """Permissions per the recording, parsed through the provider's type.
-
-        A missing `channelPermissions` key is an error here too: reading it as
-        "no permissions" is what makes a renamed field look like a precondition
-        failure rather than a contract break.
-        """
-        user = self.recorded_customer(customer)
-        if not user:
-            return []
-        from .responses import Customer
-
-        return Customer.parse(user, where=f"recording:{customer}").permissions_on(channel)
-
-    def run_repair(self, customer: str, permission: str, channel: str, approve: str | None = None):
-        payload = {"customer_id": customer, "permission": permission, "channel": channel}
-        argv = ["scutch", "run", "saleor.customer.repair", "--input", "@-", "--format", "json",
-                "--idempotency-key", self.idem]
-        if approve:
-            argv += ["--approve-plan", approve]
-        return self.invoke(argv, payload)
 
     def invoke(self, argv: list[str], payload: dict | None = None) -> dict:
-        """Run the CLI and collect the request log it produced."""
+        """Run the CLI and collect the request log it produced.
+
+        The argv and payload are remembered so a later step can repeat *this*
+        invocation byte for byte — including its idempotency key, which is what
+        makes "repeating does not repeat the effect" a claim about the same
+        intent rather than a similar one.
+        """
         self.cli.recording = self.recording
         env, code, err = self.cli.run(argv, stdin=payload)
         assert env, f"no stdout from {argv}; stderr={err}"
+        self.last_argv = list(argv)
+        self.last_payload = dict(payload) if payload is not None else None
         self.envelopes.append(env)
         self.returncodes.append(code)
         self.wire.extend(self.cli.drain_wire())
@@ -125,33 +91,6 @@ class Steps:
         return [r for r in self.wire if r.get("kind") == "query"]
 
     # -- Given -----------------------------------------------------------
-
-    # -- GMV / query steps ------------------------------------------------
-
-    def when_compute_net_confirmed(self, net: str, confirmation: str) -> None:
-        self.invoke(
-            ["scutch", "run", "saleor.gmv.compute", "--input", "@-", "--format", "json"],
-            {
-                "basis": "net-confirmed",
-                "net": float(net),
-                "confirmation": float(confirmation),
-                "return_rate": 0.15,
-            },
-        )
-
-    def when_compute_api_derived_without_requests(self) -> None:
-        self.invoke(
-            ["scutch", "run", "saleor.gmv.compute", "--input", "@-", "--format", "json"],
-            {"basis": "api-derived"},
-        )
-
-    def then_result_is(self, value: str) -> None:
-        assert self.last["status"] == "complete", self.last.get("error")
-        assert self.last["result"]["our_gmv"] == float(value)
-
-    def then_result_names_query(self) -> None:
-        query = self.last["result"]["query"]
-        assert query.endswith(".sql"), query
 
     def then_error_names(self, field: str) -> None:
         message = (self.last.get("error") or {}).get("message", "")
@@ -179,20 +118,21 @@ class Steps:
         self._resets += 1
         self.idem = f"{self.idem_base}-{self._resets}"
 
-    def given_recording(self, name: str) -> None:
-        """Bind the scenario to one recorded HTTP session."""
-        self.recording = name
+    def given_order_status(self, order_id: str, status: str) -> None:
+        """State a precondition about the seed data, and fail loudly if it is false.
 
-    def given_customer_has(self, customer: str, permission: str, channel: str) -> None:
-        self.customer, self.permission, self.channel = customer, permission, channel
-        assert permission in self.recorded_permissions(customer, channel), (
-            f"recording precondition failed: {customer} lacks {permission} on {channel}"
-        )
+        A scenario that assumes ``ord_a1`` is ``placed`` should not quietly pass
+        when it is not: the precondition is asserted against the committed seed,
+        not against whatever the working copy happens to hold.
+        """
+        from .providers import resolve
 
-    def given_customer_missing(self, customer: str, permission: str, channel: str) -> None:
-        self.customer, self.permission, self.channel = customer, permission, channel
-        assert permission not in self.recorded_permissions(customer, channel), (
-            f"recording precondition failed: {customer} already has {permission} on {channel}"
+        cfg = self.cli.ws.providers["ledger"]
+        ledger = resolve(cfg, self.cli.ws.root).load()
+        ledger.reset()  # read the seed, not a working copy from a previous step
+        actual = ledger.get(order_id).get("status")
+        assert actual == status, (
+            f"seed precondition failed: {order_id} is {actual!r}, scenario says {status!r}"
         )
 
     # -- When ------------------------------------------------------------
@@ -231,8 +171,14 @@ class Steps:
             raise AssertionError(f"with input: not valid JSON: {exc}") from exc
 
     def when_preview(self) -> None:
-        assert self.customer and self.permission
-        self.run_repair(self.customer, self.permission, self.channel)
+        """Preview the last operation the scenario named, with its last input."""
+        assert self.last_argv is not None, "no operation named before the preview"
+        argv = [a for a in self.last_argv if a not in ("--approve-plan",)]
+        # Drop any previous approval so this is a genuine preview.
+        if "--approve-plan" in argv:
+            i = argv.index("--approve-plan")
+            del argv[i : i + 2]
+        self.invoke(argv, self.last_payload)
 
     def when_follow_next_argv(self) -> None:
         nxt = self.last.get("next") or {}
@@ -241,9 +187,14 @@ class Steps:
         env = self.invoke(argv, nxt.get("input") or {})
 
     def when_repeat_invocation(self) -> None:
-        """Repeat the caller's own invocation, with the same idempotency key."""
-        assert self.customer and self.permission
-        self.run_repair(self.customer, self.permission, self.channel)
+        """Repeat the caller's own last invocation, unchanged.
+
+        "Unchanged" includes the idempotency key, which is the point: the same
+        intent must not produce a second effect. The argv and payload are those
+        of the previous call, so this step works for any operation.
+        """
+        assert self.last_argv is not None, "nothing has been invoked yet"
+        self.invoke(list(self.last_argv), self.last_payload)
 
     def when_cancel_pending(self) -> None:
         job = self.last.get("job_id")
@@ -254,36 +205,38 @@ class Steps:
         self.cancelled_digest = self.last["plan"]["digest"]
         self.envelopes.append(env)
 
+    def _approve(self, digest: str) -> None:
+        """Re-run the last invocation with an explicit approval digest."""
+        assert self.last_argv is not None, "nothing to approve"
+        argv = [a for a in self.last_argv if a != "--approve-plan"]
+        if "--approve-plan" in argv:
+            i = argv.index("--approve-plan")
+            del argv[i : i + 2]
+        self.invoke([*argv, "--approve-plan", digest], self.last_payload)
+
     def when_approve_cancelled_digest(self) -> None:
-        assert self.customer and self.permission
-        self.run_repair(
-            self.customer, self.permission, self.channel, approve=self.cancelled_digest
-        )
+        assert self.cancelled_digest, "no cancelled digest to try"
+        self._approve(self.cancelled_digest)
 
     def when_approve_digest(self, digest: str) -> None:
-        assert self.customer and self.permission
-        self.run_repair(self.customer, self.permission, self.channel, approve=digest)
+        self._approve(digest)
 
-    def when_run_no_customer(self) -> None:
-        env, code, err = self.cli.run(
-            ["scutch", "run", "saleor.customer.repair", "--input", "@-", "--format", "json"],
-            stdin={},
+    def when_run_without_input(self, operation: str) -> None:
+        """Call an operation with no input at all, to see what it asks for."""
+        self.invoke(
+            ["scutch", "run", operation, "--input", "@-", "--format", "json"], {}
         )
-        assert env, f"no stdout; stderr={err}"
-        self.envelopes.append(env)
-        self.returncodes.append(code)
 
     def when_process_restarts(self) -> None:
         self.env = {}
 
-    def when_list_customers(self) -> None:
-        self.invoke(["scutch", "run", "saleor.customer.list", "--input", "@-", "--format", "json"])
+    def when_list_orders(self) -> None:
+        self.invoke(["scutch", "run", "orders.list", "--input", "@-", "--format", "json"])
 
-    def when_inspect_customer(self, customer: str) -> None:
-        self.customer = customer
+    def when_inspect_order(self, order_id: str) -> None:
         self.invoke(
-            ["scutch", "run", "saleor.customer.inspect", "--input", "@-", "--format", "json"],
-            {"customer_id": customer},
+            ["scutch", "run", "orders.inspect", "--input", "@-", "--format", "json"],
+            {"order_id": order_id},
         )
 
     def when_context(self) -> None:
@@ -312,11 +265,6 @@ class Steps:
         result = self.last.get("result") or {}
         bases = result.get("bases") or result.get("rows") or []
         assert len(bases) == int(n), f"expected {n} bases, got {len(bases)}"
-
-    def then_our_gmv_is(self, value: str) -> None:
-        got = (self.last.get("result") or {}).get("our_gmv")
-        assert got is not None, self.last.get("result")
-        assert abs(float(got) - float(value)) < 0.01, f"our_gmv {got} != {value}"
 
     def then_error_names_permitted(self) -> None:
         error = self.last.get("error") or {}
@@ -347,8 +295,13 @@ class Steps:
         assert "approve-plan" not in " ".join(self.last["next"]["argv"])
 
     def then_no_mutation_requested(self) -> None:
-        assert self.last["plan"]["changes"] == []
-        assert self.last["status"] == "complete"
+        """No mutation is requested, whether or not a plan was even computed.
+
+        A read has no `plan` key at all, which is stronger than an empty plan;
+        indexing it would turn the strongest case into a crash.
+        """
+        assert (self.last.get("plan") or {}).get("changes", []) == []
+        assert self.last["status"] == "complete", self.last.get("error")
 
     def then_no_mutation_happened(self) -> None:
         """No mutation crossed the wire in *this* scenario.
@@ -359,6 +312,29 @@ class Steps:
         exactly the boundary "this scenario" means.
         """
         assert self.mutations() == [], [m["document"][:60] for m in self.mutations()]
+
+    def then_change_count(self, n: str) -> None:
+        """`Then there are N changes` — a count, not just "exactly one"."""
+        changes = (self.last.get("plan") or {}).get("changes") or []
+        assert len(changes) == int(n), f"expected {n} change(s), got {len(changes)}: {changes}"
+
+    def then_result_field(self, field_name: str, value: str) -> None:
+        """`Then the result field "x" is "y"` — one labelled result value."""
+        result = self.last.get("result") or {}
+        actual = result.get(field_name)
+        if isinstance(actual, list):
+            actual = len(actual)
+        assert str(actual) == value, f"result[{field_name!r}] = {actual!r}, expected {value!r}"
+
+    def then_no_further_change(self) -> None:
+        """`Then repeating reports no further change` — the second envelope agrees."""
+        assert len(self.envelopes) >= 2, "there is no repeat to compare"
+        first, second = self.envelopes[-2], self.envelopes[-1]
+        assert second["status"] == "complete", second.get("error")
+        assert (second.get("result") or {}) == (first.get("result") or {}), (
+            "repeating the same intent produced a different result: "
+            f"{first.get('result')} then {second.get('result')}"
+        )
 
     def then_exactly_one_change(self) -> None:
         assert len(self.last["plan"]["changes"]) == 1, self.last["plan"]
@@ -388,6 +364,11 @@ class Steps:
 
     def then_error_code(self, code: str) -> None:
         assert self.last["error"]["code"] == code, json.dumps(self.last.get("error"))
+
+    def then_error_has_hint(self) -> None:
+        """`Then the error suggests what to do next` — an error a caller can act on."""
+        hint = (self.last.get("error") or {}).get("hint")
+        assert hint, f"error carries no hint: {json.dumps(self.last.get('error'))}"
 
     def then_error_lists_missing(self, field: str) -> None:
         details = self.last["error"]["details"]
@@ -428,9 +409,23 @@ class Steps:
         assert set(fields) == set(self.last["idempotency_key"])
 
     def then_source_is_module(self) -> None:
+        """The description points at real code, and at a spec.
+
+        Generic: it asserts the implementation is a dotted name inside a module
+        that exists on disk, and that a spec is named. It does not assert any
+        particular filename, which is what made it demo-specific.
+        """
         source = self.last["source"]
-        assert source["implementation"].endswith("repair_customer")
-        assert "customer_repair" in source["module"]
+        implementation = source["implementation"]
+        module = source["module"]
+        assert "." in implementation, implementation
+        assert implementation.rsplit(".", 1)[0] == module, (implementation, module)
+        path = self.cli.workspace / "operations"
+        stems = {p.stem for p in path.rglob("*.py")} if path.is_dir() else set()
+        assert module.rsplit("_", 2)[-1] in stems or any(module.endswith(s) for s in stems), (
+            f"module {module!r} does not correspond to a file under operations/"
+        )
+        assert source.get("spec"), "the description names no spec"
 
     def then_intended_effects_name(self, effect: str) -> None:
         assert effect in self.last["intended_effects"]
@@ -495,15 +490,16 @@ class Steps:
         hint = (self.last.get("error") or {}).get("hint", "")
         assert "re-record" in hint, hint
 
-    def when_request_unrecorded(self) -> None:
-        """Call a provider method whose query the recording does not contain.
+    def when_request_missing_record(self) -> None:
+        """Ask an operation for something the provider cannot supply.
 
-        A changed query or a new call site must fail loudly: replay inventing a
-        response would make a contract test pass while the API contract broke.
+        A provider must fail loudly rather than invent a response: a lookup that
+        quietly returned a default would make a scenario pass while the outside
+        world had changed underneath it.
         """
         self.invoke(
-            ["scutch", "run", "saleor.customer.list", "--input", "@-", "--format", "json"],
-            {"limit": 5},
+            ["scutch", "run", "orders.inspect", "--input", "@-", "--format", "json"],
+            {"order_id": "ord_zz"},
         )
 
     def then_reports_redacted_field(self) -> None:
@@ -515,33 +511,27 @@ class Steps:
 
 LIBRARY = [
     step(r"a fresh workspace", "given_fresh_workspace"),
-    step(r"I compute net-confirmed GMV of ([0-9.]+) at ([0-9.]+)", "when_compute_net_confirmed"),
-    step(r"I compute api-derived GMV without requests", "when_compute_api_derived_without_requests"),
-    step(r"the result is ([0-9.]+)", "then_result_is"),
-    step(r"the result names the query file it ran", "then_result_names_query"),
+    step(r'order "([^"]+)" is "([^"]+)"', "given_order_status"),
+    step(r"I run ([a-z][a-z0-9_.]*) with no input", "when_run_without_input"),
+    step(r"I list orders", "when_list_orders"),
+    step(r'I inspect order "([^"]+)"', "when_inspect_order"),
     step(r'the error names "([^"]+)"', "then_error_names"),
-    step(r'the recording "([^"]+)"', "given_recording"),
-    step(r'customer "([^"]+)" already has permission "([^"]+)" on channel "([^"]+)"', "given_customer_has"),
-    step(r'customer "([^"]+)" is missing permission "([^"]+)" on channel "([^"]+)"', "given_customer_missing"),
-    step(r"I preview the permission repair", "when_preview"),
     step(r"I follow the published next argv", "when_follow_next_argv"),
     step(r"I repeat the original invocation unchanged", "when_repeat_invocation"),
     step(r"I cancel the pending plan", "when_cancel_pending"),
     step(r"I approve the cancelled digest", "when_approve_cancelled_digest"),
     step(r'I approve digest "([^"]+)"', "when_approve_digest"),
+    step(r"there are (\d+) changes", "then_change_count"),
+    step(r'the result field "([^"]+)" is "([^"]+)"', "then_result_field"),
+    step(r"repeating reports no further change", "then_no_further_change"),
     step(r"I run ([a-z][a-z0-9_.]*)", "when_run_operation"),
     step(r"I run ([a-z][a-z0-9_.]*) with input (.+)$", "when_run_with_input"),
     step(r"the scaffold is unfinished", "then_scaffold_is_unfinished"),
-    step(r"the result lists (\d+) bases", "then_result_lists_n_bases"),
-    step(r"our GMV is ([0-9.]+)", "then_our_gmv_is"),
-    step(r"the error names the permitted bases", "then_error_names_permitted"),
+    step(r"the error suggests what to do next", "then_error_has_hint"),
     step(r"the envelope status is one of (.+)$", "then_status_in"),
     step(r"with input (.+)$", "when_with_input"),
-    step(r"I run the permission repair with no customer", "when_run_no_customer"),
     step(r"the process restarts", "when_process_restarts"),
     step(r"I ask for the workspace context", "when_context"),
-    step(r"I list customers", "when_list_customers"),
-    step(r'I inspect customer "([^"]+)"', "when_inspect_customer"),
     step(r"I request an operation whose query is not recorded", "when_request_unrecorded"),
     step(r'I describe "([^"]+)"', "when_describe"),
     step(r'the envelope status is "([^"]+)"', "then_envelope_status"),
@@ -552,8 +542,6 @@ LIBRARY = [
     step(r"there is exactly one change", "then_exactly_one_change"),
     step(r'the change kind is "([^"]+)"', "then_change_kind"),
     step(r"the next argv approves the returned digest", "then_next_approves_digest"),
-    step(r"the second response reports a replay", "then_replay_reported"),
-    step(r'the customer holds exactly one "([^"]+)" permission on "([^"]+)"', "then_customer_holds_exactly"),
     step(r'the error code is "([^"]+)"', "then_error_code"),
     step(r'the error lists "([^"]+)" as missing', "then_error_lists_missing"),
     step(r"the next block carries canonical inputs and an argv", "then_next_carries_canonical"),
@@ -566,14 +554,12 @@ LIBRARY = [
     step(r"its idempotency key covers (.+)", "then_idempotency_covers", extract=quoted),
     step(r"its source is the implementing module", "then_source_is_module"),
     step(r'the intended effects name "([^"]+)"', "then_intended_effects_name"),
-    step(r'the external reads name "([^"]+)"', "then_external_reads_name"),
     step(r'the result lists "([^"]+)"', "then_result_lists"),
     step(r"the result has no restricted fields", "then_result_has_no_restricted_fields"),
     step(r"the envelope reports a redacted field", "then_reports_redacted_field"),
     step(r"the envelope withholds nothing", "then_withholds_nothing"),
     step(r'the plan intends one mutation of kind "([^"]+)"', "then_plan_intends_one_mutation"),
     step(r"the request log holds no mutation", "then_request_log_holds_no_mutation"),
-    step(r'the request log holds a read of "([^"]+)"', "then_request_log_holds_read_of"),
     step(r"the request log holds exactly (\d+) mutation", "then_request_log_holds_exactly"),
     step(r'that mutation calls "([^"]+)"', "then_mutation_calls"),
     step(r"that mutation sends (.+)", "then_mutation_sends", extract=named_values),

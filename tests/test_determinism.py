@@ -15,8 +15,8 @@ import pytest
 
 from scutch.envelope import canonical, digest
 
-REPAIR = ["run", "saleor.customer.repair", "--format", "json"]
-LIST = ["run", "saleor.customer.list", "--format", "json"]
+FULFIL = ["run", "orders.fulfil", "--format", "json"]
+LIST = ["run", "orders.list", "--format", "json"]
 
 
 def test_envelope_is_identical_across_runs(cli):
@@ -37,16 +37,16 @@ def test_job_id_is_derived_not_random(cli):
 
 
 def test_different_input_is_a_different_envelope(cli):
-    a, _, _ = cli.scutch(*REPAIR, "--input", "@-", stdin={"customer_id": "cust_456", "permission": "read_orders"})
-    b, _, _ = cli.scutch(*REPAIR, "--input", "@-", stdin={"customer_id": "cust_456", "permission": "manage_orders"})
+    a, _, _ = cli.scutch(*FULFIL, "--input", "@-", stdin={"order_id": "ord_a1"})
+    b, _, _ = cli.scutch(*FULFIL, "--input", "@-", stdin={"order_id": "ord_a2"})
     assert digest(a) != digest(b)
 
 
 def test_preview_is_reproducible(cli):
     """A dry run must be reproducible even though it allocates a run record."""
-    payload = {"customer_id": "cust_456", "permission": "read_orders"}
-    a, _, _ = cli.scutch(*REPAIR, "--input", "@-", stdin=payload)
-    b, _, _ = cli.scutch(*REPAIR, "--input", "@-", stdin=payload)
+    payload = {"order_id": "ord_a1"}
+    a, _, _ = cli.scutch(*FULFIL, "--input", "@-", stdin=payload)
+    b, _, _ = cli.scutch(*FULFIL, "--input", "@-", stdin=payload)
     assert a["status"] == b["status"] == "needs_approval"
     assert a["plan"]["digest"] == b["plan"]["digest"]
     assert canonical(a) == canonical(b)

@@ -42,36 +42,25 @@ def _run(operation: str, inputs: dict[str, Any], **kwargs: Any) -> int:
 # Steps
 
 
-def list_customers() -> int:
+def list_orders() -> int:
     """A read-only step: no approval, no mutation."""
-    return _run("saleor.customer.list", {})
+    return _run("orders.list", {})
 
 
-def repair_customer(customer_id: str, permission: str, channel: str = "retail") -> int:
+def fulfil_order(order_id: str) -> int:
     """A consequential step: it plans, so a caller sees the effect before it lands."""
-    return _run(
-        "saleor.customer.repair",
-        {"customer_id": customer_id, "permission": permission, "channel": channel},
-    )
+    return _run("orders.fulfil", {"order_id": order_id})
 
 
-def gmv_net_confirmed(net: str, confirmation: str, return_rate: str = "0.15") -> int:
-    """The GMV basis as a step, so a report can quote a figure with its inputs."""
-    return _run(
-        "saleor.gmv.compute",
-        {
-            "basis": "net-confirmed",
-            "net": float(net),
-            "confirmation": float(confirmation),
-            "return_rate": float(return_rate),
-        },
-    )
+def outstanding() -> int:
+    """A filtered read as a step: what a workflow in a loop would ask for."""
+    return _run("orders.list", {"status": "placed"})
 
 
 def ga_token() -> int:
     """The exec seam, made explicit.
 
-    This is the shape 13 scripts in saleor-bi use to reach Google. As a script
+    This is the shape an external CLI call takes as a script step. As a script
     task the call is a list — which is why a feature can assert it exactly, and
     why a test can replace it without a PATH shim.
     """

@@ -16,10 +16,12 @@ from scutch.gherkin import parse_feature, run_feature
 
 from .gherkin import LIBRARY, Steps
 
-SPECS = Path(__file__).resolve().parents[1] / "specs"
+SPECS = Path(__file__).resolve().parents[1] / "specs" / "orders"
 
 
 def features():
+    # The demo workspace's own workflows. `specs/scutch` and `specs/workspace`
+    # are the scaffolder's templates, not features of this workspace.
     return [pytest.param(p, id=p.stem) for p in sorted(SPECS.rglob("*.feature"))]
 
 
@@ -57,7 +59,7 @@ def test_a_feature_stops_at_the_first_failing_scenario(workspace, cli, tmp_path)
         Scenario("w", "step two", [("Then", 'the envelope status is "needs_approval"')]),
         Scenario("w", "step three", [("Then", 'the envelope status is "complete"')]),
     ]
-    env = Steps(cli).invoke(["scutch", "run", "saleor.customer.list", "--input", "@-", "--format", "json"])
+    env = Steps(cli).invoke(["scutch", "run", "orders.list", "--input", "@-", "--format", "json"])
 
     steps = Failing(cli)
     steps.envelopes = [env]

@@ -277,7 +277,7 @@ def cancel_cmd(
 @app.command("new")
 def new_cmd(
     kind: str = typer.Argument(..., help="operation | feature"),
-    name: str = typer.Argument(..., help="Dotted name, e.g. saleor.grist.master.write"),
+    name: str = typer.Argument(..., help="Dotted name, e.g. orders.fulfil"),
     effect: str = typer.Option("read", "--effect", help="read | plan_apply | mutate"),
     query: bool = typer.Option(False, "--query", help="This operation computes over data: scaffold a .sql file"),
     domain: str | None = typer.Option(None, "--domain", help="Feature folder (defaults to the name's first segment)"),
@@ -395,7 +395,7 @@ def specs_cmd(
 @app.command("new")
 def new_cmd(
     kind: str = typer.Argument(..., help="operation | feature"),
-    name: str = typer.Argument(..., help="Dotted name, e.g. saleor.grist.master.write"),
+    name: str = typer.Argument(..., help="Dotted name, e.g. orders.fulfil"),
     effect: str = typer.Option("read", "--effect", help="read | plan_apply | mutate"),
     query: bool = typer.Option(False, "--query", help="This operation computes over data: scaffold a .sql file"),
     domain: str | None = typer.Option(None, "--domain", help="Feature folder (defaults to the name's first segment)"),

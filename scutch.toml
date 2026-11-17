@@ -1,12 +1,10 @@
 [workspace]
 name = "scutch-demo"
-description = "Example workspace: Saleor customer permissions."
+description = "Example workspace: fulfilling orders from a JSON ledger."
 
-[providers.saleor]
-mode = "replay"              # fixture | live
-data = "fixtures/saleor"
-env = "SCUTCH_SALEOR_TOKEN"   # used only in live mode
-notes = "https://saleor.example/graphql/"
+[providers.ledger]
+mode = "local"                # local (a file) | replay (a cassette) | live (a network)
+data = "fixtures/orders.json"
 
 [policy]
 require_approval_for = ["plan_apply", "mutate"]

@@ -76,15 +76,21 @@ def _next_run_argv(op: Operation, *, format: str, idempotency: str | None, appro
 
 
 def _call(fn, op: Operation, inputs: dict[str, Any], kwargs: dict[str, Any]):
-    """Call an operation/plan function, injecting providers and context."""
+    """Call an operation/plan function, injecting providers and context.
+
+    A provider is injected for every declared credential whose *alias* is a
+    parameter on the function: `credentials={"ledger": Provider("ledger")}`
+    means the function takes `ledger=`. The alias is the operation's own name
+    for the handle, so an operation need not call its provider `api`.
+    """
     sig = inspect.signature(fn)
     args = dict(inputs)
-    if "api" in sig.parameters:
-        refs = op.credentials
-        if len(refs) != 1:
-            raise ContractError(f"{op.name}: api injection needs exactly one credential")
-        (alias, ref), = refs.items()
-        args["api"] = kwargs["providers"][ref.name].load()
+    for alias, ref in op.credentials.items():
+        if alias not in sig.parameters:
+            continue
+        if ref.name not in kwargs["providers"]:
+            raise ContractError(f"{op.name}: provider {ref.name!r} is not configured")
+        args[alias] = kwargs["providers"][ref.name].load()
     if "ctx" in sig.parameters:
         args["ctx"] = kwargs["ctx"]
     return fn(**args)

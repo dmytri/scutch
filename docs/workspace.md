@@ -10,11 +10,11 @@ consulted except the environment variables a provider explicitly names.
 [workspace]
 name = "my-repo"
 
-[providers.saleor]
+[providers.ledger]
 mode = "replay"              # replay | live
-data = "fixtures/saleor"     # fixture seeds (read-only)
+data = "fixtures/orders.json"     # fixture seeds (read-only)
 env = "SCUTCH_SALEOR_TOKEN"  # live mode: env var holding the secret
-notes = "https://saleor.example/graphql/"
+notes = "https://fixtures/orders.json"
 
 [policy]
 require_approval_for = ["plan_apply", "mutate"]
@@ -28,10 +28,10 @@ bootstrap = "Custom bootstrap text for agents…"
 | mode | behaviour |
 |---|---|
 | `replay` | Serves recorded HTTP exchanges from `fixtures/<provider>/*.json`. Deterministic, credential-free, no network. Unknown requests fail loudly. |
-| `live` | The secret comes from `env`, or from `resolve = "cmd:pass show saleor"`. It is handed to the worker only. |
+| `live` | The secret comes from `env`, or from `resolve = "cmd:pass show ledger"`. It is handed to the worker only. |
 
-Either way, the **handle** is public (`{"provider": "saleor", "resolution":
-"runtime"}`) and the **value** is not. `SaleorApi.__repr__` redacts it too, so a
+Either way, the **handle** is public (`{"provider": "ledger", "resolution":
+"runtime"}`) and the **value** is not. `the provider's __repr__` redacts it too, so a
 stray log line cannot leak it.
 
 ## Operations
@@ -101,7 +101,7 @@ change*; the operation function *does* it. The runtime only calls the second
 after an approval bound to the first.
 
 ```python
-@plan_for("saleor.customer.repair")
+@plan_for("orders.fulfil")
 def plan_repair(customer_id, permission, channel="retail", *, api) -> Plan:
     if already_present(api, customer_id, channel, permission):
         return Plan(changes=[], summary="nothing to do",
@@ -137,7 +137,7 @@ feature may cover a family of operations by naming them:
 
 ```gherkin
 Feature: Customer inspection
-  Covers: saleor.customer.list, saleor.customer.inspect
+  Covers: orders.list, orders.inspect
 
   Scenario: Listing customers
     When I list customers
@@ -157,7 +157,7 @@ semantics.
 
 ```just
 customer-repair customer_id permission channel="retail":
-    scutch run saleor.customer.repair \
+    scutch run orders.fulfil \
       --input '{"customer_id":"{{customer_id}}","permission":"{{permission}}","channel":"{{channel}}"}'
 ```
 

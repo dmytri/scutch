@@ -1,8 +1,8 @@
 # Scutch workspace aliases.
 #
-# These are *thin aliases only*: they build a canonical `scutch` invocation and
-# nothing else. No schema, credential handling or workflow semantics may live
-# here — `scutch describe` is the contract.
+# These are *thin aliases only*: each recipe builds a canonical `scutch`
+# invocation and nothing else. No schema, credential handling or workflow
+# semantics may live here — `scutch describe` is the contract.
 
 default:
     @just --list
@@ -21,39 +21,43 @@ list:
 describe operation:
     @scutch describe {{operation}} --format json
 
-# Executable examples for one operation.
-examples operation:
-    @scutch examples {{operation}} --format json
-
-# Check the workspace: contracts, specs, providers, run store.
+# Check the workspace: contracts, conventions, providers, run store.
 doctor:
     @scutch doctor --format json
 
 # --- execution --------------------------------------------------------------
 
-# Read: list customers.
-customers:
-    @scutch run saleor.customer.list --input '{}' --format json
+# Read: list orders.
+orders:
+    @scutch run orders.list --input '{}' --format json
 
-# Read: inspect one customer.
-customer customer_id:
-    @scutch run saleor.customer.inspect \
-      --input '{"customer_id":"{{customer_id}}"}' \
+# Read: list only what still needs doing.
+outstanding:
+    @scutch run orders.list --input '{"status":"placed"}' --format json
+
+# Read: inspect one order.
+order order_id:
+    @scutch run orders.inspect \
+      --input '{"order_id":"{{order_id}}"}' \
       --format json
 
-# Preview a permission repair. Returns a plan digest; applying needs approval.
-customer-repair customer_id permission channel="retail":
-    @scutch run saleor.customer.repair \
-      --input '{"customer_id":"{{customer_id}}","permission":"{{permission}}","channel":"{{channel}}"}' \
+# Preview fulfilling one order. Returns a plan digest; applying needs approval.
+fulfil order_id:
+    @scutch run orders.fulfil \
+      --input '{"order_id":"{{order_id}}"}' \
       --format json
 
 # Approve and apply an exact plan. The digest comes from the preview.
-customer-repair-apply customer_id permission channel approve_plan:
-    @scutch run saleor.customer.repair \
-      --input '{"customer_id":"{{customer_id}}","permission":"{{permission}}","channel":"{{channel}}"}' \
-      --idempotency-key repair-{{customer_id}}-{{permission}}-{{channel}} \
+fulfil-apply order_id approve_plan:
+    @scutch run orders.fulfil \
+      --input '{"order_id":"{{order_id}}"}' \
+      --idempotency-key fulfil-{{order_id}} \
       --approve-plan {{approve_plan}} \
       --format json
+
+# Preview fulfilling every outstanding order, in one plan.
+fulfil-all:
+    @scutch run orders.bulk --input '{}' --format json
 
 # Inspect a job or run.
 status job:
@@ -65,38 +69,29 @@ cancel job:
 
 # Recent local runs.
 runs:
-    @scutch runs --format json
+    @scutch status --format json
 
-# --- recording --------------------------------------------------------------
+# --- workflows --------------------------------------------------------------
 
-# Record HTTP exchanges from a live endpoint into a replay cassette.
-# Requires a real token in the provider env var, and --approve for mutations.
-record provider endpoint operation input approve="":
-    @scutch record {{provider}} --endpoint {{endpoint}} --operation {{operation}} --input '{{input}}' {{approve}} --format json
+# Run a feature as a workflow: scenarios in order, stopping at the first failure.
+workflow feature:
+    @scutch workflow {{feature}} --format json
+
+# Show a workflow's steps without running them.
+steps feature:
+    @scutch workflow {{feature}} --list --format json
 
 # --- interface & maintenance ------------------------------------------------
 
-# Human interface: same transitions, forms and approvals.
+# Human interface: the same transitions, as guided screens.
 ui:
     @scutch ui
-
-# Regenerate docs from descriptors.
-docs:
-    @scutch docs --format json
-
-# Prove an operation returns the same envelope for the same input.
-verify operation input="{}":
-    @scutch verify {{operation}} --input '{{input}}' --format json
-
-# Prove implementation and schemas agree, and specs exist.
-validate:
-    @scutch validate --format json
 
 # Run the test suite.
 test:
     @PYTHONPATH=. python -m pytest tests -q
 
-# Reset local run history (recordings in fixtures/ are untouched).
+# Reset local run history and the ledger working copy (the seed is untouched).
 reset:
-    @rm -rf .scutch/runs/*
-    @echo "run history reset; recordings untouched"
+    @rm -rf .scutch/runs/* .scutch/ledger.json
+    @echo "run history reset; fixtures/ untouched"

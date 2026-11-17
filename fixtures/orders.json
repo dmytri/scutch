@@ -1,0 +1,8 @@
+{
+  "orders": [
+    {"id": "ord_a1", "customer": "acme", "status": "placed", "total": 120.0, "placed_at": "2026-11-01T09:00:00Z"},
+    {"id": "ord_a2", "customer": "acme", "status": "fulfilled", "total": 80.5, "placed_at": "2026-11-01T10:00:00Z"},
+    {"id": "ord_b1", "customer": "globex", "status": "placed", "total": 42.0, "placed_at": "2026-11-02T08:00:00Z"},
+    {"id": "ord_c1", "customer": "initech", "status": "cancelled", "total": 15.0, "placed_at": "2026-11-02T09:00:00Z"}
+  ]
+}

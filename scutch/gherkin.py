@@ -4,7 +4,7 @@ Deliberately minimal. It owns the *format* (Feature/Scenario/Given-When-Then) an
 the dispatch contract (every step must resolve to a method, or the run fails);
 it owns nothing about any particular repository's steps.
 
-Two consumers so far: Scutch's own suite and saleor-bi's operations. They share
+Two consumers so far: Scutch's own suite and `scutch workflow`. They share
 the parser and the "no undefined steps" rule, and supply their own step methods.
 Putting the engine in the package (rather than in one repo's tests/) is what lets
 a workspace treat its feature files as executable without copying a runner.

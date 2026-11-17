@@ -45,25 +45,25 @@ def test_baseline_passes(cli):
 
 
 def test_inline_secret_fails(cli):
-    ops = cli.workspace / "operations" / "saleor" / "customer_repair.py"
+    ops = cli.workspace / "operations" / "orders" / "ledger_ops.py"
     ops.write_text(ops.read_text() + '\nAPI_TOKEN = "sk-abcdefghijklmnopqrstuvwx"\n')
     c = check(doctor(cli), "no_inline_secrets")
     assert not c["ok"]
-    assert "customer_repair.py" in json.dumps(c["detail"])
+    assert "ledger_ops.py" in json.dumps(c["detail"])
 
 
 def test_feature_outside_a_domain_folder_fails(cli):
     specs = cli.workspace / "specs"
-    shutil.copy(specs / "saleor" / "customer_read.feature", specs / "flat.feature")
+    shutil.copy(specs / "orders" / "reading.feature", specs / "flat.feature")
     c = check(doctor(cli), "features_are_workflows")
     assert not c["ok"]
     assert "flat.feature" in json.dumps(c["detail"])
 
 
 def test_declared_query_that_does_not_exist_fails(cli):
-    ops = cli.workspace / "operations" / "saleor" / "customer_repair.py"
+    ops = cli.workspace / "operations" / "orders" / "ledger_ops.py"
     text = ops.read_text().replace(
-        "examples=[", 'query="operations/saleor/missing.sql",\n    examples=[', 1
+        "examples=[", 'query="operations/orders/missing.sql",\n    examples=[', 1
     )
     ops.write_text(text)
     c = check(doctor(cli), "queries_are_sql")
@@ -82,10 +82,10 @@ def test_shell_step_fails_the_poe_convention(cli):
 def test_unclaimed_operation_fails(cli):
     """An operation no feature mentions is undocumented behaviour."""
     for feature in (cli.workspace / "specs").rglob("*.feature"):
-        feature.write_text(feature.read_text().replace("saleor.customer.list", "saleor.other"))
+        feature.write_text(feature.read_text().replace("orders.list", "orders.other"))
     c = check(doctor(cli), "features")
     assert not c["ok"]
-    assert "saleor.customer.list" in json.dumps(c["detail"])
+    assert "orders.list" in json.dumps(c["detail"])
 
 
 def test_doctor_requires_duckdb_because_queries_are_sql(workspace, cli, monkeypatch):

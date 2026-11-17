@@ -153,6 +153,13 @@ def doctor(ws) -> dict[str, Any]:
                     "cassettes": len(cassettes),
                 }
             )
+        elif cfg.mode == "local":
+            # Nothing to authenticate: a file or an in-process thing. The only
+            # requirement is that its factory loads.
+            from .providers import load_implementation
+
+            ok = load_implementation(name, ws.root) is not None
+            prov.append({"provider": name, "mode": "local", "ok": ok})
         else:
             import os
 
@@ -399,9 +406,10 @@ def check_conventions(ws, check) -> None:
 
     # A feature run must not be able to reach the network: every provider in the
     # workspace has to be replayable, or the feature is not a dry run.
-    undoubled = sorted(
-        name for name, cfg in ws.providers.items() if cfg.mode != "replay"
-    )
+    # Only `live` can reach a network a feature did not ask for. `replay` is a
+    # recording and `local` is a file: neither crosses a boundary, so neither
+    # needs a double.
+    undoubled = sorted(name for name, cfg in ws.providers.items() if cfg.mode == "live")
     check(
         "doubles_mandatory",
         not undoubled,

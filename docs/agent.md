@@ -22,7 +22,7 @@ That text is returned by `scutch context` under `bootstrap` (configurable under
 
 | receives | never receives |
 |---|---|
-| provider handles (`{"provider":"saleor","resolution":"runtime"}`) | credential values |
+| provider handles (`{"provider":"ledger","resolution":"runtime"}`) | credential values |
 | typed operation descriptions and JSON Schemas | unresolved provider internals |
 | validated canonical arguments | other callers' inputs |
 | deliberately projected results | raw API payloads, logs, stdout |

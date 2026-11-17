@@ -101,17 +101,28 @@ class Operation:
 
     @property
     def params(self) -> list[inspect.Parameter]:
-        sig = inspect.signature(self.fn)
+        """Caller-supplied parameters: everything the runtime does not inject.
+
+        Injected means any credential alias -- the operation names it in
+        `credentials={"ledger": Provider("ledger")}` -- plus the reserved `ctx`.
+        Deriving this from the declared aliases means a provider handle is never
+        advertised as input the caller must supply, which is what an `api`-only
+        check got wrong.
+        """
+        injected = set(self.credentials) | {"ctx", "api"}
         return [
             p
-            for p in sig.parameters.values()
-            if p.name not in {"api"} and p.kind is not inspect.Parameter.VAR_KEYWORD
+            for p in inspect.signature(self.fn).parameters.values()
+            if p.name not in injected and p.kind is not inspect.Parameter.VAR_KEYWORD
         ]
 
     @property
     def provider_params(self) -> list[inspect.Parameter]:
+        injected = set(self.credentials) | {"api"}
         return [
-            p for p in inspect.signature(self.fn).parameters.values() if p.name == "api"
+            p
+            for p in inspect.signature(self.fn).parameters.values()
+            if p.name in injected
         ]
     @property
     def requires_approval(self) -> bool:

@@ -9,7 +9,6 @@ documentation cannot quietly become marketing.
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 
 import pytest
@@ -31,131 +30,78 @@ def _harness(workspace, tmp_path):
     return Cli(workspace, shim)
 
 
-def _scenario(name_fragment: str):
+def _scenario(feature: str, predicate):
     from tests.gherkin import parse_feature
 
-    for scenario in parse_feature(REPO / "specs" / "saleor" / "api_customer_repair.feature"):
-        if name_fragment in scenario.name:
+    for scenario in parse_feature(REPO / "specs" / "orders" / feature):
+        if predicate(scenario):
             return scenario
-    raise AssertionError(f"no scenario matching {name_fragment!r}")
+    raise AssertionError(f"no matching scenario in {feature}")
 
 
 def test_specs_catch_a_dropped_mutation(workspace, tmp_path):
     """The strongest claim: an apply that does nothing is caught by a scenario."""
     from tests.gherkin import LIBRARY, Steps, execute
 
-    ops = workspace / "operations" / "saleor" / "customer_repair.py"
+    ops = workspace / "operations" / "orders" / "ledger_ops.py"
     ops.write_text(
         ops.read_text().replace(
-            "    api.apply_permission(customer_id, channel, permission)", "    pass"
+            '        ledger.set_status(order_id, "fulfilled")', "        pass"
         )
     )
     cli = _harness(workspace, tmp_path)
-    cli.recording = "scenario-repair"
+    scenario = _scenario("bulk.feature", lambda s: "fulfils them all at once" in s.name)
     with pytest.raises(AssertionError):
-        execute(_scenario("documented variables"), Steps(cli), LIBRARY)
+        execute(scenario, Steps(cli), LIBRARY)
 
 
-def test_falsified_recorded_data_is_not_caught(tmp_path):
-    """Documents the gap: replay checks requests, not the truth of responses."""
+def test_falsified_seed_data_is_not_caught(tmp_path):
+    """Documents the gap: specs check our workflow, not the truth of the store."""
     from tests.conftest import _copy_workspace
 
     ws = _copy_workspace(tmp_path / "ws")
-    cassette = ws / "fixtures" / "saleor" / "scenario-repair.json"
-    data = json.loads(cassette.read_text())
-    for exchange in data["exchanges"]:
-        user = (exchange.get("response") or {}).get("user")
-        if user:
-            user["email"] = "falsified@example.com"
-    cassette.write_text(json.dumps(data, indent=2))
+    seed = ws / "fixtures" / "orders.json"
+    data = json.loads(seed.read_text())
+    # Falsify a field no scenario asserts on: the customer name, not the status.
+    for order in data["orders"]:
+        order["customer"] = "falsified@example.com"
+    seed.write_text(json.dumps(data, indent=2))
 
-    # The scenario's assertions are about status, changes and the wire — none of
-    # them depend on the email — so a false recording passes. That is the point:
-    # specs describe our workflow, not the API's data.
-    from tests.gherkin import LIBRARY, Steps, execute, parse_feature
-    from tests.conftest import Cli
+    # The scenario asserts the envelope status and that no approval is required;
+    # none of that depends on who placed the order, so a false seed passes. That
+    # is the point: specs describe our workflow, not the store's data.
+    from tests.gherkin import LIBRARY, Steps, execute
 
-    shim = tmp_path / "bin"
-    shim.mkdir(exist_ok=True)
-    exe = shim / "scutch"
-    import sys
-
-    exe.write_text(f'#!/bin/sh\nexec "{sys.executable}" -m scutch.cli "$@"\n')
-    exe.chmod(0o755)
-    cli = Cli(ws, shim)
-    scenario = [
-        s for s in parse_feature(REPO / "specs" / "saleor" / "api_customer_repair.feature")
-        if "documented variables" in s.name
-    ][0]
+    cli = _harness(ws, tmp_path)
+    scenario = _scenario(
+        "approval.feature", lambda s: "already-fulfilled order" in s.name
+    )
     execute(scenario, Steps(cli), LIBRARY)  # must not raise
 
 
-def test_recorded_response_error_is_surfaced(workspace, tmp_path):
-    """A recording that says the API refused must fail the workflow loudly."""
-    from tests.conftest import Cli
+def test_provider_failure_is_surfaced(workspace, tmp_path):
+    """A store that cannot answer must fail the workflow loudly."""
+    from tests.gherkin import LIBRARY, Steps, execute
 
-    cassette = workspace / "fixtures" / "saleor" / "scenario-repair.json"
-    data = json.loads(cassette.read_text())
-    for exchange in data["exchanges"]:
-        if "mutation" in exchange["request"]["document"]:
-            exchange["response"] = {
-                "channelUpdatePermission": {
-                    "user": None,
-                    "errors": [{"field": "permission", "message": "NOPE", "code": "INVALID"}],
-                }
-            }
-    cassette.write_text(json.dumps(data, indent=2))
+    seed = workspace / "fixtures" / "orders.json"
+    seed.write_text("{ this is not json")
 
-    import sys
+    cli = _harness(workspace, tmp_path)
+    scenario = _scenario("errors.feature", lambda s: "does not exist" in s.name)
+    # The scenario expects not_found; a corrupt ledger instead yields a
+    # provider_error, and the scenario fails rather than passing silently.
+    with pytest.raises(AssertionError):
+        execute(scenario, Steps(cli), LIBRARY)
 
-    shim = tmp_path / "bin"
-    shim.mkdir(exist_ok=True)
-    exe = shim / "scutch"
-    exe.write_text(f'#!/bin/sh\nexec "{sys.executable}" -m scutch.cli "$@"\n')
-    exe.chmod(0o755)
-    cli = Cli(workspace, shim)
-    cli.recording = "scenario-repair"
-
-    preview, _, _ = cli.scutch(
-        "run", "saleor.customer.repair", "--input", "@-", "--format", "json",
-        stdin={"customer_id": "cust_456", "permission": "read_orders"},
-    )
     applied, code, _ = cli.scutch(
-        "run", "saleor.customer.repair", "--input", "@-", "--format", "json",
-        "--idempotency-key", "k", "--approve-plan", preview["plan"]["digest"],
-        stdin={"customer_id": "cust_456", "permission": "read_orders"},
+        "run", "orders.inspect", "--input", "@-", "--format", "json",
+        stdin={"order_id": "ord_a1"},
     )
     assert applied["status"] == "failed"
     assert applied["error"]["code"] == "provider_error"
     assert code == 7
 
 
-def test_auth_header_is_not_asserted(workspace, tmp_path):
-    """Documents the gap: dropping auth changes no scenario.
-
-    Replay never sends a request, so the transport's headers cannot be observed.
-    This is why a green suite is not evidence the API accepts our calls.
-    """
-    provider = workspace / "providers" / "saleor.py"
-    text = provider.read_text()
-    assert '"Authorization": f"Bearer {self._secret}"' in text
-    stripped = text.replace(
-        '                "Authorization": f"Bearer {self._secret}",\n', ""
-    )
-    provider.write_text(stripped)
-
-    from tests.conftest import Cli
-    from tests.gherkin import LIBRARY, Steps, execute, parse_feature
-    import sys
-
-    shim = tmp_path / "bin"
-    shim.mkdir(exist_ok=True)
-    exe = shim / "scutch"
-    exe.write_text(f'#!/bin/sh\nexec "{sys.executable}" -m scutch.cli "$@"\n')
-    exe.chmod(0o755)
-    cli = Cli(workspace, shim)
-    scenario = [
-        s for s in parse_feature(REPO / "specs" / "saleor" / "api_customer_repair.feature")
-        if "no credential appears" in " ".join(t for _, t in s.steps)
-    ][0]
-    execute(scenario, Steps(cli), LIBRARY)  # still passes: headers are invisible to replay
+# Deleted: `test_auth_header_is_not_asserted` (dropping auth changes no scenario).
+# The ledger provider is a local JSON file with no transport and no headers, so
+# the replay-invisible-headers gap it documented has no analogue here.

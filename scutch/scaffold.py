@@ -18,7 +18,7 @@ NAME_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$")
 
 
 def _module_path(ws: Workspace, name: str) -> Path:
-    """`saleor.grist.master.write` -> operations/saleor/grist/master_write.py"""
+    """`orders.refund.issue` -> operations/orders/refund/issue.py"""
     parts = name.split(".")
     *dirs, leaf = parts
     return ws.root / "operations" / Path(*dirs) / f"{leaf}.py"
@@ -115,7 +115,7 @@ def scaffold_operation(ws: Workspace, name: str, *, effect: str, query: bool) ->
     if not NAME_RE.match(name):
         raise UsageError(
             f"{name!r} is not a dotted lowercase name",
-            hint="e.g. saleor.grist.master.write",
+            hint="e.g. orders.refund.issue",
         )
     if effect not in ("read", "plan_apply", "mutate"):
         raise UsageError(f"unknown effect {effect!r}", hint="read | plan_apply | mutate")

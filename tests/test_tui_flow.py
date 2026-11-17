@@ -66,12 +66,12 @@ def test_home_explains_where_you_are(ws):
 
 def test_operation_screen_states_the_effect_and_fields(ws):
     async def go():
-        app = ScutchApp(ws, operation="saleor.customer.repair")
+        app = ScutchApp(ws, operation="orders.fulfil")
         async with app.run_test() as pilot:
             await pilot.pause()
             body = text_of(app)
             assert "approval" in body.lower()
-            assert set(app.inputs) == {"customer_id", "permission", "channel"}
+            assert set(app.inputs) == {"order_id"}
 
     import asyncio
 
@@ -82,11 +82,10 @@ def test_mutating_operation_previews_before_changing_anything(ws):
     """Fill the form, press the button, and land on a summary — not a mutation."""
 
     async def go():
-        app = ScutchApp(ws, operation="saleor.customer.repair")
+        app = ScutchApp(ws, operation="orders.fulfil")
         async with app.run_test() as pilot:
             await pilot.pause()
-            app.inputs["customer_id"].value = "cust_456"
-            app.inputs["permission"].value = "read_orders"
+            app.inputs["order_id"].value = "ord_a1"
             await pilot.pause()
             app.submit()
             await pilot.pause()
@@ -102,7 +101,7 @@ def test_mutating_operation_previews_before_changing_anything(ws):
 
 def test_a_read_only_operation_says_so(ws):
     async def go():
-        app = ScutchApp(ws, operation="saleor.customer.list")
+        app = ScutchApp(ws, operation="orders.list")
         async with app.run_test() as pilot:
             await pilot.pause()
             body = text_of(app)
@@ -116,7 +115,7 @@ def test_a_read_only_operation_says_so(ws):
 def test_workflow_screen_lists_steps_in_order(ws):
     from pathlib import Path
 
-    feature = ws.root / "specs" / "saleor" / "customer_repair.feature"
+    feature = ws.root / "specs" / "orders" / "approval.feature"
 
     async def go():
         app = ScutchApp(ws, feature=feature)
@@ -133,7 +132,7 @@ def test_workflow_screen_lists_steps_in_order(ws):
 
 def test_running_a_workflow_in_the_tui_reports_step_by_step(ws):
     """The workflow screen runs the same scenarios the CLI runs, and says where it stopped."""
-    feature = ws.root / "specs" / "saleor" / "customer_repair.feature"
+    feature = ws.root / "specs" / "orders" / "approval.feature"
 
     async def go():
         app = ScutchApp(ws, feature=feature)

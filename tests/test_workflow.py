@@ -6,15 +6,15 @@ import json
 
 
 def _feature(workspace, text: str) -> str:
-    path = workspace / "specs" / "saleor" / "smoke.feature"
+    path = workspace / "specs" / "orders" / "smoke.feature"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
-    return "specs/saleor/smoke.feature"
+    return "specs/orders/smoke.feature"
 
 
 def test_listing_a_feature_does_not_run_it(workspace, cli):
     env, code, err = cli.scutch(
-        "workflow", "--list", "specs/saleor/customer_read.feature", "--format", "json"
+        "workflow", "--list", "specs/orders/reading.feature", "--format", "json"
     )
     assert code == 0, err
     assert env["count"] >= 1
@@ -25,7 +25,7 @@ def test_listing_a_feature_does_not_run_it(workspace, cli):
 
 
 def test_a_feature_runs_as_a_workflow(workspace, cli):
-    env, code, err = cli.scutch("workflow", "specs/saleor/customer_read.feature")
+    env, code, err = cli.scutch("workflow", "specs/orders/reading.feature")
     assert code == 0, err
     assert env["ok"] is True
     assert env["ran"], "no scenario ran"
@@ -38,15 +38,15 @@ def test_a_failing_step_stops_the_workflow(workspace, cli):
         """Feature: smoke
   Scenario: one
     Given a fresh workspace
-    When I list customers
+    When I run orders.list
     Then the envelope status is "complete"
 
   Scenario: two
-    When I list customers
+    When I run orders.list
     Then the envelope status is "needs_approval"
 
   Scenario: three
-    When I list customers
+    When I run orders.list
     Then the envelope status is "complete"
 """,
     )
@@ -63,9 +63,11 @@ def test_keep_going_attempts_every_step(workspace, cli):
         workspace,
         """Feature: smoke
   Scenario: one
+    When I run orders.list
     Then the envelope status is "needs_approval"
 
   Scenario: two
+    When I run orders.list
     Then the envelope status is "needs_approval"
 """,
     )

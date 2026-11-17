@@ -1,7 +1,7 @@
 """Provider resolution.
 
 A provider is the seam between an operation and an external service. Operators
-declare *references* (``credentials={"api": ProviderRef("saleor")}``); the
+declare *references* (``credentials={"ledger": ProviderRef("ledger")}``); the
 runtime resolves them. Credential values never enter an envelope, a run record
 or a description — only the provider handle does.
 
@@ -89,10 +89,17 @@ def resolve(cfg: ProviderConfig, root: Path) -> Resolution:
         factory = load_implementation(cfg.name, root)
         return Resolution(cfg.name, "replay", factory, cfg, root=root, data_dir=data_dir)
 
+    # `local` has nothing to authenticate: a file, an in-process service. It
+    # exists so a demo need not pretend to be a remote API, and so "this run
+    # touches no network" has an honest answer that is not "replay".
+    if cfg.mode == "local":
+        factory = load_implementation(cfg.name, root)
+        return Resolution(cfg.name, "local", factory, cfg, root=root)
+
     if cfg.mode not in ("live",):
         raise ProviderError(
             f"provider {cfg.name!r} has unknown mode {cfg.mode!r}",
-            hint="mode must be 'replay' or 'live'",
+            hint="mode must be 'replay', 'live' or 'local'",
         )
 
     secret = None

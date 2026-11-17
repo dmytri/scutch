@@ -7,6 +7,9 @@ diverge, the human is approving something the agent would not.
 
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
+
 import pytest
 
 pytest.importorskip("textual")
@@ -18,82 +21,83 @@ from scutch.runner import execute  # noqa: E402
 from scutch.tui import ScutchApp  # noqa: E402
 from scutch.workspace import load_workspace  # noqa: E402
 
+REPO = Path(__file__).resolve().parents[1]
+INPUT = {"order_id": "ord_a1"}
+
+
+def make_workspace(tmp_path: Path, name: str):
+    """An isolated copy of the demo workspace, so two surfaces can each start
+    from the same seed ledger without seeing each other's mutations."""
+    root = tmp_path / name
+    for entry in ("operations", "providers", "specs", "fixtures"):
+        src = REPO / entry
+        if src.is_dir():
+            shutil.copytree(src, root / entry)
+    shutil.copy(REPO / "scutch.toml", root / "scutch.toml")
+    return load_workspace(root)
+
 
 @pytest.fixture()
 def ws(tmp_path, monkeypatch):
-    import shutil
-    from pathlib import Path
-
-    repo = Path(__file__).resolve().parents[1]
-    for name in ("operations", "providers", "specs", "fixtures"):
-        src = repo / name
-        if src.is_dir():
-            shutil.copytree(src, tmp_path / name)
-    shutil.copy(repo / "scutch.toml", tmp_path / "scutch.toml")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("SCUTCH_FIXTURES", str(tmp_path / "fixtures"))
-    return load_workspace(tmp_path)
+    return make_workspace(tmp_path, "agent")
 
 
-INPUT = {"customer_id": "cust_456", "permission": "read_orders"}
-
-
-def test_cli_and_tui_agree_the_plan_digest_approves_the_same_thing(ws):
-    cli_env, _ = execute(ws, "saleor.customer.repair", dict(INPUT), fmt="json")
+def _run_tui(ws, *, approve: bool):
+    """Drive the TUI through the guided form and return its final envelope."""
 
     async def go():
-        app = ScutchApp(ws, operation="saleor.customer.repair")
+        app = ScutchApp(ws, operation="orders.fulfil")
         async with app.run_test() as pilot:
             await pilot.pause()
-            app.inputs["customer_id"].value = "cust_456"
-            app.inputs["permission"].value = "read_orders"
+            app.inputs["order_id"].value = "ord_a1"
             await pilot.pause()
             app.submit()
             await pilot.pause()
+            if approve:
+                app.approve()
+                await pilot.pause()
             return app.last_envelope
 
     import asyncio
 
-    tui_env = asyncio.run(go())
-    assert tui_env["status"] == cli_env["status"]
+    return asyncio.run(go())
+
+
+def test_cli_and_tui_agree_the_plan_digest_approves_the_same_thing(ws):
+    cli_env, _ = execute(ws, "orders.fulfil", dict(INPUT), fmt="json")
+    tui_env = _run_tui(ws, approve=False)
+
+    assert tui_env["status"] == cli_env["status"] == "needs_approval"
     tui_plan = (tui_env.get("plan") or {}).get("digest")
     cli_plan = (cli_env.get("plan") or {}).get("digest")
     assert tui_plan == cli_plan, "the human would approve a different plan than the agent"
 
 
-def test_approving_in_the_tui_is_approve_plan_digest(ws):
-    cli_preview, _ = execute(ws, "saleor.customer.repair", dict(INPUT), fmt="json")
+def test_approving_in_the_tui_is_approve_plan_digest(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    # Each surface gets its own seeded workspace, so neither sees the other's
+    # applied mutation. On identical inputs they must agree exactly.
+    agent_ws = make_workspace(tmp_path, "agent")
+    human_ws = make_workspace(tmp_path, "human")
+
+    cli_preview, _ = execute(agent_ws, "orders.fulfil", dict(INPUT), fmt="json")
     cli_applied, _ = execute(
-        ws,
-        "saleor.customer.repair",
+        agent_ws,
+        "orders.fulfil",
         dict(INPUT),
         approve_plan=(cli_preview.get("plan") or {}).get("digest"),
         fmt="json",
     )
 
-    async def go():
-        app = ScutchApp(ws, operation="saleor.customer.repair")
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            app.inputs["customer_id"].value = "cust_456"
-            app.inputs["permission"].value = "read_orders"
-            await pilot.pause()
-            app.submit()
-            await pilot.pause()
-            app.approve()
-            await pilot.pause()
-            return app.last_envelope
-
-    import asyncio
-
-    tui_env = asyncio.run(go())
-    assert tui_env["status"] == cli_applied["status"]
+    tui_env = _run_tui(human_ws, approve=True)
+    assert tui_env["status"] == cli_applied["status"] == "complete"
     assert (tui_env.get("result") or {}) == (cli_applied.get("result") or {})
 
 
 def test_human_and_agent_see_the_same_facts(ws):
     """The phrasing differs; the underlying data must not."""
-    env, _ = execute(ws, "saleor.customer.repair", dict(INPUT), fmt="json")
+    env, _ = execute(ws, "orders.fulfil", dict(INPUT), fmt="json")
     person = human.outcome(env)
     assert person["status"] == env["status"]
     assert person["redacted"] == (env.get("redacted") or [])

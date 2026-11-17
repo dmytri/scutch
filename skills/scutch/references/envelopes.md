@@ -5,9 +5,9 @@ One shape for every response:
 ```json
 {
   "kind": "scutch.envelope/v1",
-  "operation": "saleor.customer.repair",
+  "operation": "orders.fulfil",
   "status": "needs_approval",
-  "input": { "customer_id": "cust_456", "permission": "read_orders", "channel": "retail" },
+  "input": { "order_id": "ord_a1" },
   "plan": { "changes": [{ "kind": "permission.add", "target": "...", "value": "read_orders" }],
             "digest": "sha256:3f13f66…", "summary": "grant read_orders …" },
   "result": null,
@@ -36,7 +36,7 @@ the call exactly. `next` is always present and always complete.
  "input": {"channel": "retail"},
  "error": {"code": "missing_input", "message": "required inputs are missing",
            "details": {"missing": ["customer_id", "permission"], "schema": {...}}},
- "next": {"argv": ["scutch","run","saleor.customer.repair","--input","@-","--format","json"],
+ "next": {"argv": ["scutch","run","orders.fulfil","--input","@-","--format","json"],
           "input": {"channel": "retail"}}}
 ```
 
@@ -103,7 +103,7 @@ successful transitions, not errors. Branch on `status`, not on the exit code.
 ## Redaction and artifacts
 
 ```json
-{"result": {"customer_id": "cust_456", "status": "applied"},
+{"result": {"order_id": "ord_a1", "status": "fulfilled"},
  "redacted": ["raw_response"],
  "artifacts": [{"name": "diagnostics", "path": ".scutch/artifacts/run_…/diagnostics.json",
                 "restricted": true, "bytes": 4021}]}
