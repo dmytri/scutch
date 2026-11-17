@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from scutch.errors import NotFound, ProviderError
+from scutch.responses import Customer, FieldError, Permission
 from scutch.providers import Resolution, replay_data
 
 
@@ -188,7 +189,7 @@ class SaleorApi:
 
     # -- reads -----------------------------------------------------------
 
-    def get_customer(self, customer_id: str) -> dict[str, Any]:
+    def get_customer(self, customer_id: str) -> Customer:
         data = self._transport.execute(Q_CUSTOMER, {"id": customer_id})
         user = data.get("user")
         if not user:
@@ -196,17 +197,19 @@ class SaleorApi:
                 f"customer {customer_id!r} does not exist",
                 hint="use saleor.customer.list to find a valid id",
             )
-        return user
+        return Customer.parse(user, where=f"customer[{customer_id}]")
 
-    def list_customers(self, limit: int = 20) -> list[dict[str, Any]]:
+    def list_customers(self, limit: int = 20) -> list[Customer]:
         data = self._transport.execute(Q_CUSTOMERS, {"n": limit})
+        edges = (data.get("users") or {}).get("edges")
+        if not isinstance(edges, list):
+            raise FieldError(
+                "list_customers: response has no `users.edges` list",
+                details={"keys": sorted(data)},
+            )
         return [
-            {
-                "customer_id": e["node"]["id"],
-                "email": e["node"]["email"],
-                "channel_permissions": e["node"].get("channelPermissions", []),
-            }
-            for e in data["users"]["edges"]
+            Customer.parse(edge.get("node"), where=f"users.edges[{i}].node")
+            for i, edge in enumerate(edges)
         ]
 
     def orders(self, customer_id: str) -> list[dict[str, Any]]:

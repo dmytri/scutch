@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import dataclasses
 import importlib.util
+import sys
 import json
 import os
 import subprocess
@@ -120,9 +121,14 @@ def load_implementation(name: str, root: Path) -> Callable[[Resolution], Any] | 
     path = root / "providers" / f"{name}.py"
     if not path.is_file():
         return None
-    spec = importlib.util.spec_from_file_location(f"scutch_provider_{name}", path)
+    module_name = f"scutch_provider_{name}"
+    spec = importlib.util.spec_from_file_location(module_name, path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
+    # Register before executing: `@dataclass` resolves annotations by looking the
+    # module up in `sys.modules`, so a module that is exec'd without registering
+    # fails on any dataclass with annotated fields.
+    sys.modules[module_name] = module
     spec.loader.exec_module(module)
     fn = getattr(module, "make", None)
     if fn is None:

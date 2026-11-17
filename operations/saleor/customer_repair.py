@@ -68,7 +68,14 @@ def list_customers(limit: int = 20, *, api: SaleorApi) -> CustomerList:
     """Read-only listing. Safe to call from any agent without approval."""
     rows = api.list_customers(limit)
     return CustomerList(
-        customers=[CustomerSummary(**r) for r in rows],
+        customers=[
+            CustomerSummary(
+                customer_id=c.customer_id,
+                email=c.email,
+                channel_permissions=c.to_json()["channelPermissions"],
+            )
+            for c in rows
+        ],
         count=len(rows),
     )
 
@@ -86,9 +93,9 @@ def inspect_customer(customer_id: CustomerId, *, api: SaleorApi) -> CustomerSumm
     """Read-only. Returns the customer's permissions exactly as Saleor holds them."""
     c = api.get_customer(customer_id)
     return CustomerSummary(
-        customer_id=c["id"],
-        email=c["email"],
-        channel_permissions=c.get("channelPermissions", []),
+        customer_id=c.customer_id,
+        email=c.email,
+        channel_permissions=c.to_json()["channelPermissions"],
     )
 
 
@@ -124,7 +131,7 @@ def repair_customer(
 ) -> RepairReport:
     """Add a permission if it is missing. Applied only after plan approval."""
     before = api.get_customer(customer_id)
-    already = _has(before, channel, permission)
+    already = permission in before.permissions_on(channel)
     api.apply_permission(customer_id, channel, permission)
     after = api.get_customer(customer_id)
     return RepairReport(
@@ -132,8 +139,8 @@ def repair_customer(
         permission=permission,
         channel=channel,
         status="no_change" if already else "applied",
-        channel_permissions=after.get("channelPermissions", []),
-        raw_response={"before": before, "after": after},
+        channel_permissions=after.to_json()["channelPermissions"],
+        raw_response={"before": before.to_json(), "after": after.to_json()},
     )
 
 
@@ -147,7 +154,7 @@ def plan_repair(
 ) -> Plan:
     """The read path. Empty changes mean the caller needs no approval."""
     customer = api.get_customer(customer_id)
-    if _has(customer, channel, permission):
+    if permission in customer.permissions_on(channel):
         return Plan(
             changes=[],
             summary="permission already present; nothing to do",
@@ -156,7 +163,7 @@ def plan_repair(
                 permission=permission,
                 channel=channel,
                 status="no_change",
-                channel_permissions=customer.get("channelPermissions", []),
+                channel_permissions=customer.to_json()["channelPermissions"],
             ),
         )
     return Plan(
@@ -171,8 +178,8 @@ def plan_repair(
     )
 
 
-def _has(customer: dict[str, Any], channel: str, permission: str) -> bool:
-    for entry in customer.get("channelPermissions", []):
-        if entry.get("channel", {}).get("slug") == channel:
-            return permission in entry.get("permissions", [])
+def _has(customer: Any, channel: str, permission: str) -> bool:
+    """Kept for callers that pass a parsed Customer; delegates to the type."""
+    if hasattr(customer, "permissions_on"):
+        return permission in customer.permissions_on(channel)
     return False

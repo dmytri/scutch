@@ -85,13 +85,18 @@ class Steps:
         return None
 
     def recorded_permissions(self, customer: str, channel: str) -> list[str]:
+        """Permissions per the recording, parsed through the provider's type.
+
+        A missing `channelPermissions` key is an error here too: reading it as
+        "no permissions" is what makes a renamed field look like a precondition
+        failure rather than a contract break.
+        """
         user = self.recorded_customer(customer)
         if not user:
             return []
-        for entry in user.get("channelPermissions", []):
-            if entry.get("channel", {}).get("slug") == channel:
-                return list(entry.get("permissions", []))
-        return []
+        from .responses import Customer
+
+        return Customer.parse(user, where=f"recording:{customer}").permissions_on(channel)
 
     def run_repair(self, customer: str, permission: str, channel: str, approve: str | None = None):
         payload = {"customer_id": customer, "permission": permission, "channel": channel}
