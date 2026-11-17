@@ -44,44 +44,29 @@ the effects drift between the two passes, the run is refused.
 ## Two front ends, one flow
 
 An agent does four things: **list → describe → run (dry) → run --approve**.
-
-Two front ends, both projections of the same two calls:
-
-**`scutch ui`** — a full-screen browser: operations in a left rail, a form for
-the parameters, a review pane showing the effects and the digest, and a
-`DataTable` for results (it sizes its own columns, sorts, and scrolls). Textual
-does the tedious parts; the app calls `plan()` and `apply()` exactly as the CLI
-does.
+`scutch ui` does the same four in a full-screen browser, built on Textual:
 
 ```
-┌ Operations ────┬ orders.fulfil ──────────────────────┐
-│ > orders.fulfil│                                     │
-│   orders.list  │  Mark a placed order fulfilled.      │
-│   orders.notify│                                     │
-│                │  order_id  [ord_a1 ]                 │
-│                │                                     │
-│                │  [ Preview effects ]  [ Back ]       │
-└────────────────┴─────────────────────────────────────┘
+┌ Operations ──────────┬──────────────────────────────────────────┐
+│ > orders.fulfil      │ Review — nothing has happened yet        │
+│   Mark a placed or…  │                                          │
+│   orders.fulfil_all  │ This will:                               │
+│   Fulfil everything… │   • write ledger.json                    │
+│   orders.list        │                                          │
+│   List orders        │ digest sha256:0eaf4259…                  │
+│   orders.notify      │                                          │
+├──────────────────────┴──────────────────────────────────────────┤
+│      [ Apply ]  [ Back ]           q quit  esc back             │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**`scutch prompt`** — the same four steps as plain questions, for pipes, CI, or
-a terminal Textual cannot drive.
+A read-only operation skips the review screen: its result is already known from
+the dry pass, so it goes straight to a `DataTable` you can scroll. Filter it by
+filling the form (`status = placed`) and pressing preview.
 
-```console
-$ scutch prompt
-  1  orders.fulfil   Mark a placed order fulfilled.
-choose> 1
-  order_id (required): ord_a1
-  This will:
-    write ledger.json
-  digest sha256:0eaf4259…
-  approve? [y/N]> y
-  applied
-```
-
-Either way the digest is the one the CLI would print. `tests/test_browser.py` and
-`tests/test_tui.py` assert that against `plan()`, so a person can never approve
-something the agent would not.
+`scutch prompt` is the same flow line by line, for a pipe or a dumb terminal.
+Both call `run.plan` and `run.apply` — the same functions the CLI calls — so the
+digest on screen is the digest the CLI would print. A test asserts that.
 
 ## Why it is built this way
 
@@ -139,13 +124,15 @@ operations/**/*.py        the catalogue: one function per file, `io` first
 scutch/io.py              the seam
 scutch/run.py             plan / apply, over one function
 scutch/catalogue.py       discover operations from the folder
-scutch/cli.py             list, describe, run
+scutch/cli.py             list, describe, run, ui, prompt
+scutch/browser.py         the Textual browser (screens, forms, tables)
 scutch/data/seed.json     demo data; copied to ledger.json, never modified
 tests/                    the seam, the lifecycle, the continuation, the CLI
 ```
 
 There is no registry, no configuration beyond the demo's seed path, no daemon,
-no account, no network required for any test.
+no account, and no network required for any test. The only dependency is Textual,
+and only the browser needs it.
 
 ## Non-goals
 
