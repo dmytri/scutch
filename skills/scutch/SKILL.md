@@ -53,6 +53,21 @@ JSON
 `--input` also accepts a literal JSON string or a file path. JSON goes to
 stdout; diagnostics go to stderr. Nothing blocks waiting for a prompt.
 
+## Reproducibility
+
+An envelope is a function of the invocation: the same operation with the same
+canonical input returns the same envelope, apart from `run_id` (the attempt
+label) and `timing`. `job_id` is *derived* from the invocation, not random, so
+two runs of one step are byte-comparable.
+
+That is what lets a step's stdout be diffed, hashed, cached or asserted on. It
+is not about the source data: a query returning different rows tomorrow is a new
+input, not nondeterminism. Pin the inputs (an `as_of`, a window, a cost budget)
+and the decision over them stays reproducible.
+
+Check it with `scutch verify NAME --input '<json>'`. If you add a field that
+carries a clock, a counter or a random id, this is what will fail.
+
 ## Reading the envelope
 
 Always `kind: scutch.envelope/v1`. Branch on `status`:

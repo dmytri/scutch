@@ -373,6 +373,62 @@ def specs_cmd(
     )
 
 
+@app.command("verify")
+def verify_cmd(
+    operation: str = typer.Argument(..., help="Operation to prove reproducible"),
+    input: str | None = typer.Option(None, "--input", "-i"),
+    runs: int = typer.Option(2, "--runs", min=2, max=10),
+    format: str = typer.Option("json", "--format", "-f"),
+) -> None:
+    """Prove an operation returns the same envelope for the same input.
+
+    Executes the operation `--runs` times in one process and compares the
+    reproducible part of each envelope (everything except run_id and timing).
+    A workflow step's stdout can only be diffed, hashed or cached if this holds.
+    """
+    from .envelope import canonical, digest
+
+    ws = _ws()
+    try:
+        payload = _read_input(input)
+    except ScutchError as exc:
+        _fail(exc)
+
+    seen: list[dict[str, Any]] = []
+    codes: list[int] = []
+    for _ in range(runs):
+        env, code = execute(ws, operation, payload, fmt=format)
+        seen.append(env)
+        codes.append(code)
+
+    digests = [digest(e) for e in seen]
+    same = len(set(digests)) == 1
+    drift: dict[str, Any] = {}
+    if not same:
+        base = canonical(seen[0])
+        for i, env in enumerate(seen[1:], start=1):
+            other = canonical(env)
+            for key in sorted(set(base) | set(other)):
+                if base.get(key) != other.get(key):
+                    drift.setdefault(key, []).append({"run": i, "value": other.get(key)})
+
+    report: dict[str, Any] = {
+        "kind": "scutch.verify/v1",
+        "operation": operation,
+        "input": seen[0].get("input") if seen else payload,
+        "status": seen[0].get("status") if seen else None,
+        "runs": runs,
+        "reproducible": same,
+        "envelope_digest": digests[0] if same else None,
+        "exit_codes": sorted(set(codes)),
+    }
+    if not same:
+        report["drifts"] = drift
+        report["digests"] = digests
+    _emit(report, format)
+    raise typer.Exit(0 if same else 1)
+
+
 @app.command("validate")
 def validate_cmd(format: str = typer.Option("json", "--format", "-f")) -> None:
     """Prove implementation, schemas, specs and examples agree."""

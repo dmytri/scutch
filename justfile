@@ -84,6 +84,10 @@ ui:
 docs:
     @scutch docs --format json
 
+# Prove an operation returns the same envelope for the same input.
+verify operation input="{}":
+    @scutch verify {{operation}} --input '{{input}}' --format json
+
 # Prove implementation and schemas agree, and specs exist.
 validate:
     @scutch validate --format json

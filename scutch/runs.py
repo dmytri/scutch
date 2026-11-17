@@ -14,6 +14,7 @@ keyed by invocation fingerprint. Two properties matter:
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import os
 import secrets
@@ -27,7 +28,22 @@ def new_run_id() -> str:
     return f"run_{stamp}_{secrets.token_hex(4)}"
 
 
+def stable_job_id(operation: str, fingerprint: str) -> str:
+    """The job id for an invocation.
+
+    A *job* is the invocation; a *run* is one attempt at it. Deriving the id from
+    (operation, canonical inputs, idempotency) is what makes an envelope a
+    reproducible function of its inputs: the same call twice yields the same
+    envelope, so a workflow step's output can be diffed, hashed and cached.
+
+    A random id here would make every step output unique and defeat all three.
+    """
+    digest = hashlib.sha256(f"{operation}\x00{fingerprint}".encode()).hexdigest()
+    return "job_" + digest[:12]
+
+
 def new_job_id() -> str:
+    """Random id, kept for callers that genuinely want a fresh attempt label."""
     return "job_" + secrets.token_hex(6)
 
 
@@ -86,11 +102,22 @@ class RunStore:
         data.pop("updated_at_iso", None)
         return RunRecord(**data)
 
+    #: Precedence when several runs share a job id — the job names the
+    #: invocation, so a preview and its apply are two runs of one job. The most
+    #: consequential/latest state is the one a caller means by "the job".
+    _JOB_PRECEDENCE = ("applied", "failed", "applying", "planned", "superseded", "cancelled")
+
     def find_job(self, job_id: str) -> RunRecord | None:
-        for rec in self.recent(limit=None):
-            if rec.job_id == job_id:
-                return rec
-        return None
+        matches = [rec for rec in self.recent(limit=None) if rec.job_id == job_id]
+        if not matches:
+            return None
+        rank = {phase: i for i, phase in enumerate(self._JOB_PRECEDENCE)}
+        # newest first within the same phase, so a re-preview beats a stale one
+        matches.sort(key=lambda r: (rank.get(r.phase, len(rank)), -r.updated_at))
+        return matches[0]
+
+    def all_for_job(self, job_id: str) -> list[RunRecord]:
+        return [rec for rec in self.recent(limit=None) if rec.job_id == job_id]
 
     def recent(self, limit: int | None = 20) -> list[RunRecord]:
         paths = sorted(self.root.glob("run_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)

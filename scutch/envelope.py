@@ -59,3 +59,35 @@ def envelope(
 
 def dumps(envelope_obj: dict[str, Any]) -> str:
     return json.dumps(envelope_obj, indent=2, sort_keys=False, default=str)
+
+
+#: Fields that legitimately differ between two runs of the same invocation.
+#: Everything else is part of the answer and must be identical — that is what
+#: makes a step's output diffable, hashable and cacheable.
+VOLATILE = ("run_id", "timing")
+
+
+def canonical(envelope_obj: dict[str, Any]) -> dict[str, Any]:
+    """The reproducible part of an envelope.
+
+    Two runs of the same operation with the same canonical input must produce
+    equal canonical forms. `scutch verify` and the test suite assert this, so a
+    new field that leaks a clock or a random id fails loudly rather than
+    quietly making every step output unique.
+    """
+    out = dict(envelope_obj)
+    for key in VOLATILE:
+        out.pop(key, None)
+    if isinstance(out.get("next"), dict):
+        # A continuation may name this run; the digest (job) is stable, the
+        # attempt label is not.
+        out["next"] = dict(out["next"])
+    return out
+
+
+def digest(envelope_obj: dict[str, Any]) -> str:
+    """Stable hash of an envelope's reproducible content."""
+    import hashlib
+
+    body = json.dumps(canonical(envelope_obj), sort_keys=True, separators=(",", ":"), default=str)
+    return "sha256:" + hashlib.sha256(body.encode()).hexdigest()

@@ -140,6 +140,32 @@ def doctor(ws) -> dict[str, Any]:
     check("providers", all(p["ok"] for p in prov) if prov else True, prov)
 
     check("runs_dir_writable", _writable(ws.runs_dir))
+
+    # Reproducibility: a step's output must be diffable. Check only operations
+    # with a declared example so the doctor stays fast and needs no fixtures.
+    from .envelope import digest as _digest  # noqa: F401  (documented contract)
+    from .runner import execute as _execute
+
+    drift = []
+    for op in ws.registry.all():
+        if not op.examples:
+            continue
+        sample = dict(op.examples[0].get("input", {}))
+        try:
+            first, _ = _execute(ws, op.name, sample)
+            second, _ = _execute(ws, op.name, sample)
+        except Exception as exc:  # noqa: BLE001 - doctor reports, never raises
+            drift.append({"operation": op.name, "error": str(exc)[:160]})
+            continue
+        from .envelope import canonical as _canon
+
+        if _canon(first) != _canon(second):
+            drift.append({"operation": op.name, "error": "envelope differs between identical runs"})
+    check(
+        "reproducible",
+        not drift,
+        drift or "every example reproduces its envelope",
+    )
     check("artifacts_dir_writable", _writable(ws.artifacts_dir))
 
     required_ok = all(c["ok"] for c in checks if c.get("required", True))
