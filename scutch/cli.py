@@ -20,6 +20,7 @@ USAGE = """scutch list
 scutch describe OPERATION
 scutch run OPERATION [--input JSON | --input @FILE] [--approve DIGEST]
 scutch run OPERATION --input - < input.json
+scutch ui
 
 Envelopes are JSON on stdout. A plan has a status of "dry"; repeat the same
 command with --approve DIGEST to apply exactly that plan."""
@@ -39,6 +40,10 @@ def main(argv: list[str] | None = None) -> int:
             return _describe(root, args[1:])
         if args[0] == "run":
             return _run(root, args[1:])
+        if args[0] == "ui":
+            from .tui import main as ui_main
+
+            return ui_main(root)
         return _fail(f"unknown command {args[0]!r}", 2)
     except (ScutchError, Unapproved, Unanswered) as exc:
         return _fail(str(exc), 1)

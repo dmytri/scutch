@@ -10,6 +10,11 @@ SEED = Path(__file__).resolve().parents[1] / "scutch" / "data" / "seed.json"
 
 @pytest.fixture()
 def ws(tmp_path: Path) -> Path:
+    """A workspace: the repo's operations, its own ledger."""
+    import shutil
+
+    repo = Path(__file__).resolve().parents[1]
+    shutil.copytree(repo / "operations", tmp_path / "operations")
     (tmp_path / "ledger.json").write_text(SEED.read_text())
     return tmp_path
 

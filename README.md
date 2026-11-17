@@ -41,6 +41,42 @@ An operation is called **twice** with the same inputs: once to learn its effects
 once to perform them. The digest of those effects is what approval binds to. If
 the effects drift between the two passes, the run is refused.
 
+## Two front ends, one flow
+
+An agent does four things: **list → describe → run (dry) → run --approve**.
+
+`scutch ui` does exactly those four, with prompts instead of JSON:
+
+```console
+$ scutch ui
+  1  orders.fulfil      Mark a placed order fulfilled.
+  2  orders.fulfil_all  Fulfil everything outstanding.
+  3  orders.list        List orders.
+  4  orders.notify      Fulfil and notify a webhook.
+
+choose> 1
+
+orders.fulfil — Mark a placed order fulfilled.
+  order_id (required): ord_a1
+
+  This will:
+    write ledger.json
+
+  digest sha256:0eaf4259…
+  approve? [y/N]> y
+
+  applied
+    order_id   ord_a1
+    status     fulfilled
+```
+
+It calls the same `plan()` and `apply()` the CLI calls, so the digest it shows
+is the digest the CLI would show. A test asserts exactly that — if the two ever
+disagreed, a person would be approving something the agent would not.
+
+There is no form library, no curses, no dependency: the TUI is `input()` over
+the same catalogue.
+
 ## Why it is built this way
 
 The previous version of this repo modelled what external services *returned* —
