@@ -1,0 +1,12 @@
+operation: orders.list
+intent: Look at the order ledger, optionally narrowed to one status.
+parameters:
+  status:
+    description: Only orders in this status. Blank means all.
+    optional: true
+    example: placed
+effect: read
+invariants:
+  - id: read-only
+    says: this operation never writes
+    because: a read that can mutate makes every dry run a lie

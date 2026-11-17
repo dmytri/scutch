@@ -20,6 +20,7 @@ USAGE = """scutch list
 scutch describe OPERATION
 scutch run OPERATION [--input JSON | --input @FILE] [--approve DIGEST]
 scutch run OPERATION --input - < input.json
+scutch check       every operation has a spec that matches its code
 scutch ui          browser (full screen)
 scutch prompt      the same steps, line by line
 
@@ -41,6 +42,8 @@ def main(argv: list[str] | None = None) -> int:
             return _describe(root, args[1:])
         if args[0] == "run":
             return _run(root, args[1:])
+        if args[0] == "check":
+            return _check(root)
         if args[0] == "ui":
             from .browser import run as ui_run
 
@@ -57,6 +60,26 @@ def main(argv: list[str] | None = None) -> int:
 def _ensure_ledger(root: Path) -> None:
     """A workspace that is missing its data looks the same however you open it."""
     catalogue.seed(root)
+
+
+def _check(root: Path) -> int:
+    """Every operation has a spec, and the spec agrees with the code."""
+    from .specs import check
+
+    rows = check(root)
+    bad = [r for r in rows if r["problems"]]
+    print(
+        json.dumps(
+            {
+                "operations": len(rows),
+                "with_specs": sum(1 for r in rows if r["spec"]),
+                "problems": bad,
+                "ok": not bad,
+            },
+            indent=2,
+        )
+    )
+    return 1 if bad else 0
 
 
 def _list(root: Path) -> int:

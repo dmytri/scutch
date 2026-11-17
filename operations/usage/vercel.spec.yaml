@@ -1,0 +1,22 @@
+operation: usage.vercel
+intent: >
+  Convert a Vercel FOCUS billing export into equivalent requests, showing every
+  component raw and converted so the total can be explained rather than asserted.
+
+parameters:
+  export:
+    description: Path to the FOCUS JSON Lines export.
+    example: fixtures/vercel/billing_acme.jsonl
+
+effect: read
+
+invariants:
+  - id: components-visible
+    says: each service contributes its raw quantity, its weight and its equivalent
+    because: a customer conversation has to survive "why is it that number?"
+  - id: truncation-is-visible
+    says: unparseable lines are counted and reported
+    because: a truncated download should look truncated
+  - id: unknown-skus-ignored
+    says: a service name not in the weight table contributes nothing
+    because: guessing a weight is worse than omitting a line, and the omission is visible

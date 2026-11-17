@@ -1,318 +1,165 @@
 {
   "customer": "acme",
-  "generated_at": "2026-07-06T09:00:00Z",
   "rows": [
     {
-      "week_start": "2025-01-06",
-      "orders": 1185
+      "month": "2023-01",
+      "orders": 4694
     },
     {
-      "week_start": "2025-01-13",
-      "orders": 1339
+      "month": "2023-02",
+      "orders": 5568
     },
     {
-      "week_start": "2025-01-20",
-      "orders": 1373
+      "month": "2023-03",
+      "orders": 6120
     },
     {
-      "week_start": "2025-01-27",
-      "orders": 1409
+      "month": "2023-04",
+      "orders": 5857
     },
     {
-      "week_start": "2025-02-03",
-      "orders": 1358
+      "month": "2023-05",
+      "orders": 5574
     },
     {
-      "week_start": "2025-02-10",
-      "orders": 1356
+      "month": "2023-06",
+      "orders": 5713
     },
     {
-      "week_start": "2025-02-17",
-      "orders": 1353
+      "month": "2023-07",
+      "orders": 5499
     },
     {
-      "week_start": "2025-02-24",
-      "orders": 1206
+      "month": "2023-08",
+      "orders": 5275
     },
     {
-      "week_start": "2025-03-03",
-      "orders": 1148
+      "month": "2023-09",
+      "orders": 4450
     },
     {
-      "week_start": "2025-03-10",
-      "orders": 1047
+      "month": "2023-10",
+      "orders": 4374
     },
     {
-      "week_start": "2025-03-17",
-      "orders": 1046
+      "month": "2023-11",
+      "orders": 5024
     },
     {
-      "week_start": "2025-03-24",
-      "orders": 1078
+      "month": "2023-12",
+      "orders": 5369
     },
     {
-      "week_start": "2025-03-31",
-      "orders": 1057
+      "month": "2024-01",
+      "orders": 6212
     },
     {
-      "week_start": "2025-04-07",
-      "orders": 1318
+      "month": "2024-02",
+      "orders": 6616
     },
     {
-      "week_start": "2025-04-14",
-      "orders": 1410
+      "month": "2024-03",
+      "orders": 6693
     },
     {
-      "week_start": "2025-04-21",
-      "orders": 1499
+      "month": "2024-04",
+      "orders": 6841
     },
     {
-      "week_start": "2025-04-28",
-      "orders": 1380
+      "month": "2024-05",
+      "orders": 7775
     },
     {
-      "week_start": "2025-05-05",
-      "orders": 1370
+      "month": "2024-06",
+      "orders": 6518
     },
     {
-      "week_start": "2025-05-12",
-      "orders": 1379
+      "month": "2024-07",
+      "orders": 5954
     },
     {
-      "week_start": "2025-05-19",
-      "orders": 1319
+      "month": "2024-08",
+      "orders": 5442
     },
     {
-      "week_start": "2025-05-26",
-      "orders": 1263
+      "month": "2024-09",
+      "orders": 5494
     },
     {
-      "week_start": "2025-06-02",
-      "orders": 1147
+      "month": "2024-10",
+      "orders": 5435
     },
     {
-      "week_start": "2025-06-09",
-      "orders": 1118
+      "month": "2024-11",
+      "orders": 5503
     },
     {
-      "week_start": "2025-06-16",
-      "orders": 1046
+      "month": "2024-12",
+      "orders": 6033
     },
     {
-      "week_start": "2025-06-23",
-      "orders": 1142
+      "month": "2025-01",
+      "orders": 6748
     },
     {
-      "week_start": "2025-06-30",
-      "orders": 1239
+      "month": "2025-02",
+      "orders": 7528
     },
     {
-      "week_start": "2025-07-07",
-      "orders": 1287
+      "month": "2025-03",
+      "orders": 8189
     },
     {
-      "week_start": "2025-07-14",
-      "orders": 1573
+      "month": "2025-04",
+      "orders": 8088
     },
     {
-      "week_start": "2025-07-21",
-      "orders": 1584
+      "month": "2025-05",
+      "orders": 7239
     },
     {
-      "week_start": "2025-07-28",
-      "orders": 1683
+      "month": "2025-06",
+      "orders": 7900
     },
     {
-      "week_start": "2025-08-04",
-      "orders": 1531
+      "month": "2025-07",
+      "orders": 6644
     },
     {
-      "week_start": "2025-08-11",
-      "orders": 1464
+      "month": "2025-08",
+      "orders": 6601
     },
     {
-      "week_start": "2025-08-18",
-      "orders": 1398
+      "month": "2025-09",
+      "orders": 5844
     },
     {
-      "week_start": "2025-08-25",
-      "orders": 1303
+      "month": "2025-10",
+      "orders": 6227
     },
     {
-      "week_start": "2025-09-01",
-      "orders": 1249
+      "month": "2025-11",
+      "orders": 6210
     },
     {
-      "week_start": "2025-09-08",
-      "orders": 1162
+      "month": "2025-12",
+      "orders": 7058
     },
     {
-      "week_start": "2025-09-15",
-      "orders": 1112
+      "month": "2026-01",
+      "orders": 8950
     },
     {
-      "week_start": "2025-09-22",
-      "orders": 1128
+      "month": "2026-02",
+      "orders": 8376
     },
     {
-      "week_start": "2025-09-29",
-      "orders": 1246
+      "month": "2026-03",
+      "orders": 9335
     },
     {
-      "week_start": "2025-10-06",
-      "orders": 1488
-    },
-    {
-      "week_start": "2025-10-13",
-      "orders": 1464
-    },
-    {
-      "week_start": "2025-10-20",
-      "orders": 1643
-    },
-    {
-      "week_start": "2025-10-27",
-      "orders": 1708
-    },
-    {
-      "week_start": "2025-11-03",
-      "orders": 1541
-    },
-    {
-      "week_start": "2025-11-10",
-      "orders": 1605
-    },
-    {
-      "week_start": "2025-11-17",
-      "orders": 1596
-    },
-    {
-      "week_start": "2025-11-24",
-      "orders": 1241
-    },
-    {
-      "week_start": "2025-12-01",
-      "orders": 1254
-    },
-    {
-      "week_start": "2025-12-08",
-      "orders": 1202
-    },
-    {
-      "week_start": "2025-12-15",
-      "orders": 1150
-    },
-    {
-      "week_start": "2025-12-22",
-      "orders": 1279
-    },
-    {
-      "week_start": "2025-12-29",
-      "orders": 1344
-    },
-    {
-      "week_start": "2026-01-05",
-      "orders": 1369
-    },
-    {
-      "week_start": "2026-01-12",
-      "orders": 1673
-    },
-    {
-      "week_start": "2026-01-19",
-      "orders": 1766
-    },
-    {
-      "week_start": "2026-01-26",
-      "orders": 1845
-    },
-    {
-      "week_start": "2026-02-02",
-      "orders": 1879
-    },
-    {
-      "week_start": "2026-02-09",
-      "orders": 1717
-    },
-    {
-      "week_start": "2026-02-16",
-      "orders": 1587
-    },
-    {
-      "week_start": "2026-02-23",
-      "orders": 1359
-    },
-    {
-      "week_start": "2026-03-02",
-      "orders": 1384
-    },
-    {
-      "week_start": "2026-03-09",
-      "orders": 1234
-    },
-    {
-      "week_start": "2026-03-16",
-      "orders": 1234
-    },
-    {
-      "week_start": "2026-03-23",
-      "orders": 1231
-    },
-    {
-      "week_start": "2026-03-30",
-      "orders": 1351
-    },
-    {
-      "week_start": "2026-04-06",
-      "orders": 1514
-    },
-    {
-      "week_start": "2026-04-13",
-      "orders": 1801
-    },
-    {
-      "week_start": "2026-04-20",
-      "orders": 1617
-    },
-    {
-      "week_start": "2026-04-27",
-      "orders": 1720
-    },
-    {
-      "week_start": "2026-05-04",
-      "orders": 1869
-    },
-    {
-      "week_start": "2026-05-11",
-      "orders": 1904
-    },
-    {
-      "week_start": "2026-05-18",
-      "orders": 1710
-    },
-    {
-      "week_start": "2026-05-25",
-      "orders": 1385
-    },
-    {
-      "week_start": "2026-06-01",
-      "orders": 1236
-    },
-    {
-      "week_start": "2026-06-08",
-      "orders": 1365
-    },
-    {
-      "week_start": "2026-06-15",
-      "orders": 1281
-    },
-    {
-      "week_start": "2026-06-22",
-      "orders": 1307
-    },
-    {
-      "week_start": "2026-06-29",
-      "orders": 1568
+      "month": "2026-04",
+      "orders": 8625
     }
   ]
 }

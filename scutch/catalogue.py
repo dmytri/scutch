@@ -127,9 +127,25 @@ def _load(path: Path, name: str) -> Callable[..., Any]:
         raise ScutchError(f"cannot import {path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    for _, member in inspect.getmembers(module, inspect.isfunction):
-        if list(inspect.signature(member).parameters)[:1] == ["io"]:
-            return member
-    raise ScutchError(
-        f"{path} defines no operation: expected a function whose first parameter is `io`"
-    )
+    found = [
+        member
+        for _, member in inspect.getmembers(module, inspect.isfunction)
+        # A leading underscore marks a helper explicitly, so it is not the
+        # operation even if it takes `io`.
+        if not member.__name__.startswith("_")
+        and list(inspect.signature(member).parameters)[:1] == ["io"]
+    ]
+    if not found:
+        raise ScutchError(
+            f"{path} defines no operation: expected a function whose first parameter is `io`"
+        )
+    if len(found) > 1:
+        # Picking one silently is how a module ends up exposing the wrong
+        # operation for months. The file *is* the operation; a helper that takes
+        # `io` must be named with a leading underscore or moved elsewhere.
+        names = ", ".join(sorted(fn.__name__ for fn in found))
+        raise ScutchError(
+            f"{path} defines {len(found)} operations ({names}); "
+            "one file is one operation — rename helpers with a leading underscore"
+        )
+    return found[0]

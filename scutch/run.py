@@ -18,13 +18,14 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .io import IO, Unapproved, digest
+from .secrets import Vault
 
 Operation = Callable[..., Any]
 
 
 def plan(op: Operation, *, root: Path | str, inputs: dict[str, Any], answers=None) -> dict[str, Any]:
     """What would this do? Reads are real; effects are only recorded."""
-    io = IO(root=root, answers=answers, execute=False)
+    io = IO(root=root, answers=answers, execute=False, vault=Vault())
     result = op(io, **inputs)
     effects = io.effects
     return {
@@ -50,7 +51,7 @@ def apply(
             f"approved {approve}, but this run would do {planned['digest']}"
         )
 
-    io = IO(root=root, answers=answers, execute=True)
+    io = IO(root=root, answers=answers, execute=True, vault=Vault())
     result = op(io, **inputs)
     if digest(io.effects) != planned["digest"]:
         # The world moved between the dry pass and the apply pass. Refuse, and

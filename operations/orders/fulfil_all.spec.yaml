@@ -1,0 +1,8 @@
+operation: orders.fulfil_all
+intent: Fulfil every placed order in one plan, so one approval covers the whole batch.
+parameters: {}
+effect: plan_apply
+invariants:
+  - id: one-plan
+    says: N orders are one approval, not N
+    because: approving twenty times is how a batch gets half-applied

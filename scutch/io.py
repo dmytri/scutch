@@ -28,7 +28,15 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-KINDS = ("read", "write", "exec", "http", "run")
+from .errors import Failed, Missing, ScutchError, Unanswered, Unapproved, UnknownEffect
+from .secrets import MissingSecret
+
+__all__ = [
+    "Failed", "IO", "KINDS", "EFFECTS", "Missing", "MissingSecret", "OPAQUE",
+    "ScutchError", "Unanswered", "Unapproved", "UnknownEffect", "digest", "key",
+]
+
+KINDS = ("read", "write", "exec", "http", "run", "secret")
 #: Kinds that change the world, and therefore belong in a plan.
 #:
 #: `write` changes a file. `http` leaves the process and may change something
@@ -43,41 +51,9 @@ KINDS = ("read", "write", "exec", "http", "run")
 #: this same seam, so a workflow's blast radius is the sum of its steps.
 EFFECTS = ("write", "http")
 
-
-class ScutchError(Exception):
-    """Base for the four failures a caller can act on."""
-
-
-class Unanswered(ScutchError):
-    """The double was asked more often than it was given answers."""
-
-
-class Unapproved(ScutchError):
-    """The effects about to happen are not the effects that were approved."""
-
-
-class UnknownEffect(ScutchError):
-    """An ``io`` kind outside the four."""
-
-
-class Failed(ScutchError):
-    """An effect ran and the world refused: no route, non-zero exit, bad reply.
-
-    Translated at the seam so an operation reads as ordinary code and a caller
-    gets one sentence instead of a traceback from inside urllib or subprocess.
-    """
-
-
-class Missing(ScutchError):
-    """A read named a file that is not there.
-
-    Translated at the seam so an operation never has to guard a read with
-    try/except, and a person sees a sentence rather than a traceback.
-    """
-
-
-#: Arguments that are credentials or secrets and must never be hashed or shown.
-OPAQUE = ("headers", "password", "token", "secret")
+#: Arguments that carry a credential. They are replaced with whether they were
+#: present, never with their value, before an ask is hashed or shown.
+OPAQUE = ("headers", "password", "token", "secret", "api_key")
 
 
 def key(kind: str, args: dict[str, Any]) -> str:
@@ -108,6 +84,9 @@ class IO:
     answers: list[Any] | None = None
     #: Whether writes, exec and http may happen.
     execute: bool = True
+    #: Resolves `env:NAME` / `cmd:...` / `file:...` to a value. Injected so a
+    #: test never needs a real credential, and so a dry run resolves nothing.
+    vault: Any = None
     calls: list[tuple[str, dict[str, Any]]] = dataclasses.field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -129,6 +108,18 @@ class IO:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(args["text"])
             return None
+
+        if kind == "secret":
+            # A secret is never an effect: it is not in EFFECTS, so it cannot
+            # reach the plan, the digest or the review screen. It is also not
+            # resolved during a dry run — a plan should not need credentials.
+            if not self.execute:
+                return "<unresolved>"
+            if self.vault is None:
+                raise MissingSecret(
+                    f"secret {args.get('name')!r} was requested but no vault is configured"
+                )
+            return self.vault(args["name"])
 
         if kind == "run":
             # Call another operation through this same seam. It inherits the

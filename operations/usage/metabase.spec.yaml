@@ -1,0 +1,21 @@
+operation: usage.metabase
+intent: >
+  Read monthly order counts from a Metabase saved-question export. Exports are
+  preferred to the API because an analyst can send you the file the number came
+  from, and the run is then repeatable offline.
+
+parameters:
+  export:
+    description: Path to the JSON export. Rows must have `month` and `orders`.
+    example: fixtures/metabase/orders_acme.json
+  customer:
+    description: Checked against the export's `customer` field when present.
+    optional: true
+    example: acme
+
+effect: read
+
+invariants:
+  - id: no-invented-months
+    says: a row without a `month` key raises, rather than being skipped
+    because: a changed saved question should look changed

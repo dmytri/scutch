@@ -1,0 +1,45 @@
+operation: usage.analyse
+intent: >
+  Answer the commercial question for one customer: how much are they ordering,
+  how much hosting does that imply, and where is it going? Orders come from a
+  Metabase saved-question export and hosting from Vercel's FOCUS billing export,
+  so the figure a customer is billed against is read, not reconstructed.
+
+steps:
+  - usage.metabase
+  - usage.vercel
+
+parameters:
+  customer:
+    description: The account to report on. Must match the `customer` column in the export.
+    example: acme
+  project:
+    description: The Vercel project, for the heading of the report only.
+    example: acme-app
+  orders_export:
+    description: Path to the Metabase JSON export (rows of {month, orders}).
+    default: fixtures/metabase/orders_acme.json
+  billing_export:
+    description: Path to the Vercel FOCUS export (JSON Lines, one record per service).
+    default: fixtures/vercel/billing_acme.jsonl
+
+effect: read
+  # Nothing is written. The workflow reads two files and computes.
+
+invariants:
+  - id: windows-from-sql
+    says: MoM, QoQ, YoY and TTM are computed by operations/usage/queries/windows.sql
+    because: the arithmetic must be runnable by hand, so a number can be checked
+  - id: weights-are-the-contract
+    says: one equivalent request is priced to equal one Saleor API request
+    because: changing a weight changes every customer's bill
+  - id: no-zero-fill
+    says: a month present in one series and not the other is reported, never zero-filled
+    because: a zero looks like real usage that did not happen
+  - id: windows-are-labelled-honestly
+    says: WoW on monthly data is an approximation (÷ 4.345) and says so
+    because: an approximation read as a measurement is a lie with a decimal point
+
+not_covered:
+  - Customer segmentation or comparison across accounts.
+  - Invoice generation; this reports, it does not bill.

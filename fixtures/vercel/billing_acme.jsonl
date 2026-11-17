@@ -1,0 +1,5 @@
+{"ServiceName": "Edge Requests", "ConsumedQuantity": 184000000, "BillingPeriodStart": "2026-06-01"}
+{"ServiceName": "ISR Writes", "ConsumedQuantity": 21000000, "BillingPeriodStart": "2026-06-01"}
+{"ServiceName": "Fast Data Transfer", "ConsumedQuantity": 9400000000000, "BillingPeriodStart": "2026-06-01"}
+{"ServiceName": "Fast Origin Transfer", "ConsumedQuantity": 1100000000000, "BillingPeriodStart": "2026-06-01"}
+{"ServiceName": "Image Optimization Transformation", "ConsumedQuantity": 3200000, "BillingPeriodStart": "2026-06-01"}

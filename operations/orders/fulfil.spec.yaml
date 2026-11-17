@@ -1,0 +1,14 @@
+operation: orders.fulfil
+intent: Mark one placed order fulfilled. Does nothing if it is not in a state that allows it.
+parameters:
+  order_id:
+    description: The order to fulfil.
+    example: ord_a1
+effect: plan_apply
+invariants:
+  - id: refuses-non-placed
+    says: an order that is already fulfilled or cancelled is left alone
+    because: the operation is "ensure fulfilled", not "set the field"
+  - id: one-write
+    says: the plan is a single write of the whole ledger
+    because: a partially written ledger is the failure this avoids

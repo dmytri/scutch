@@ -1,0 +1,14 @@
+operation: orders.notify
+intent: Fulfil an order and tell an external service about it, as one unit.
+parameters:
+  order_id:
+    description: The order to fulfil.
+    example: ord_b1
+  url:
+    description: The webhook to POST to after the write.
+    example: https://hooks.example/fulfilled
+effect: plan_apply
+invariants:
+  - id: http-is-planned
+    says: the POST appears in the plan alongside the write
+    because: an effect you cannot see before approving is an effect you cannot refuse

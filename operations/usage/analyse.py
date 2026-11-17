@@ -1,146 +1,148 @@
-"""Turn two weekly series into the numbers a commercial conversation needs.
+"""A customer's usage, end to end: orders, hosting, projection.
 
-WoW, MoM, TTM, then a SARIMAX projection for next week and next month, and the
-next twelve months. The whole thing is a pure function of the two inputs — it
-reads and writes nothing — so it is the one operation here that can be re-run
-freely and whose answer can be checked by hand.
+This is the workflow: it composes three operations through the same seam, so a
+dry run of this operation is a dry run of the whole chain.
+
+Two series, both monthly:
+  orders    from Metabase  — the commercial reality
+  hosting   from Vercel    — converted to equivalent requests by the weights
+                             in `usage.vercel`, so both draw down one entitlement
 """
-import datetime as dt
+import warnings
 
 import pandas as pd
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 
+warnings.filterwarnings("ignore")   # statsmodel's frequency inference is noise here
 
-def _week_index(rows, field):
-    series = pd.Series(
+#: Weeks per month for reporting a week's worth of usage from monthly data.
+WEEKS_PER_MONTH = 4.345
+
+
+def _monthly(rows, field):
+    return pd.Series(
         [float(r[field]) for r in rows],
-        index=pd.to_datetime([r["week_start"] for r in rows]),
+        index=pd.to_datetime([r["month"] for r in rows]).to_period("M"),
         name=field,
-    )
-    return series.sort_index()
+    ).sort_index()
 
 
 def _pct(now, before):
-    if before == 0:
-        return None
-    return round((now - before) / before * 100, 2)
+    return None if not before else round((now - before) / before * 100, 2)
 
 
 def _forecast(series, steps):
-    """SARIMAX on a weekly series, with the annual cycle as a seasonal term.
+    """SARIMAX(1,1,1)(1,1,0,12) — a drifting walk with a yearly cycle.
 
-    (1,1,1)(1,1,0,52) is the smallest model that captures both a random walk
-    with drift and a year of seasonality. Any failure is reported as `error`
-    rather than an exception: a projection that cannot be made is information.
+    Twelve-period seasonality needs at least ~3 years to mean anything. With 40
+    months it is estimable; with less, the model still fits but the seasonal term
+    is weakly identified, which is reported rather than hidden.
     """
     model = SARIMAX(
-        series,
+        series.astype(float),
         order=(1, 1, 1),
-        seasonal_order=(1, 1, 0, 52),
+        seasonal_order=(1, 1, 0, 12),
         enforce_stationarity=False,
         enforce_invertibility=False,
-    )
-    fit = model.fit(disp=False)
-    forecast = fit.get_forecast(steps=steps)
-    mean = forecast.predicted_mean
+    ).fit(disp=False)
+    forecast = model.get_forecast(steps=steps)
     band = forecast.conf_int(alpha=0.20)
     return [
         {
-            "week_start": index.date().isoformat(),
-            "point": round(float(value), 0),
-            "low": round(float(band.iloc[i, 0]), 0),
-            "high": round(float(band.iloc[i, 1]), 0),
+            "month": str(index),
+            "point": round(float(value)),
+            "low": round(float(band.iloc[i, 0])),
+            "high": round(float(band.iloc[i, 1])),
         }
-        for i, (index, value) in enumerate(mean.items())
+        for i, (index, value) in enumerate(forecast.predicted_mean.items())
     ]
 
 
-def usage_report(io, customer: str, project: str):
-    """Cross-reference Metabase order counts with Vercel API usage.
+def customer_usage(
+    io,
+    customer: str,
+    project: str,
+    orders_export: str = "fixtures/metabase/orders_acme.json",
+    billing_export: str = "fixtures/vercel/billing_acme.jsonl",
+):
+    """Orders, equivalent requests, and the forward view for one customer.
 
-    Weeks are aligned by `week_start`; a week present in one series and not the
-    other is reported, never silently zero-filled, because a zero would look like
-    real usage that did not happen.
+    Both inputs are files an analyst downloads — a Metabase saved-question export
+    and Vercel's FOCUS billing export. That is deliberate: the number a customer
+    is billed against comes from the billing export, so reading it is more honest
+    than reconstructing it from an API that needs a token.
     """
-    orders = _week_index(
-        io("run", operation="usage.metabase", customer=customer)["rows"], "orders"
+    orders = _monthly(
+        io("run", operation="usage.metabase", export=orders_export, customer=customer)["rows"],
+        "orders",
     )
-    requests = _week_index(
-        io("run", operation="usage.vercel", project=project)["rows"], "requests"
-    )
+    hosting = io("run", operation="usage.vercel", export=billing_export)
 
-    joined = pd.concat([orders, requests], axis=1, join="outer")
-    unmatched = int(joined["orders"].isna().sum() + joined["requests"].isna().sum())
-    joined = joined.dropna()
+    latest = orders.iloc[-1]
+    latest_month = str(orders.index[-1])
+    month_ago = orders.iloc[-2] if len(orders) >= 2 else None
+    year_ago = orders.iloc[-13] if len(orders) >= 13 else None
+    ttm_rows = orders.tail(12)
 
-    latest = joined.iloc[-1]
-    month_ago = joined.iloc[-5] if len(joined) >= 5 else None
-    year_ago = joined.iloc[-53] if len(joined) >= 53 else None
+    eq_total = hosting["equivalent_requests"]
+    eq_per_order = round(eq_total / latest, 2) if latest else None
+    ttm_orders = int(ttm_rows.sum())
+    # Hosting is measured over one window, so TTM equivalent requests are that
+    # window scaled up. Stated as a projection because that is what it is.
+    ttm_equivalent = int(eq_total * 12)
 
-    def window(weeks):
-        return joined.tail(weeks)
-
-    ttm = window(52)
     report = {
         "customer": customer,
         "project": project,
-        "weeks": int(len(joined)),
-        "unmatched_weeks": unmatched,
-        "latest": {
-            "week_start": latest.name.date().isoformat(),
-            "orders": int(latest["orders"]),
-            "requests": int(latest["requests"]),
-            "requests_per_order": round(float(latest["requests"] / latest["orders"]), 1),
-        },
+        "months": int(len(orders)),
+        "latest": {"month": latest_month, "orders": int(latest)},
+        # A week cannot be compared from monthly data: dividing both months by
+        # 4.345 makes WoW identical to MoM by construction, which is a number
+        # dressed up as a measurement. Reported as unavailable, with the reason.
         "wow": {
-            "orders": _pct(latest["orders"], joined.iloc[-2]["orders"]),
-            "requests": _pct(latest["requests"], joined.iloc[-2]["requests"]),
+            "orders": None,
+            "basis": "unavailable: the source series is monthly",
+            "note": "supply weekly data to populate this window",
         },
-        "mom": (
-            {
-                "orders": _pct(latest["orders"], month_ago["orders"]),
-                "requests": _pct(latest["requests"], month_ago["requests"]),
-            }
-            if month_ago is not None
-            else None
-        ),
-        "yoy": (
-            {
-                "orders": _pct(latest["orders"], year_ago["orders"]),
-                "requests": _pct(latest["requests"], year_ago["requests"]),
-            }
-            if year_ago is not None
-            else None
-        ),
+        "mom": {"orders": _pct(latest, month_ago)} if month_ago is not None else None,
+        "yoy": {"orders": _pct(latest, year_ago)} if year_ago is not None else None,
         "ttm": {
-            "orders": int(ttm["orders"].sum()),
-            "requests": int(ttm["requests"].sum()),
-            "avg_requests_per_order": round(
-                float(ttm["requests"].sum() / ttm["orders"].sum()), 1
-            ),
+            "orders": ttm_orders,
+            "equivalent_requests": ttm_equivalent,
+            "equivalent_requests_per_order_month": eq_per_order,
+            "months": int(len(ttm_rows)),
+        },
+        "hosting": {
+            "formula": hosting["formula"],
+            "export": hosting["export"],
+            "records": hosting["records"],
+            "unparseable": hosting["unparseable"],
+            "equivalent_requests": eq_total,
+            "components": hosting["components"],
         },
     }
 
-    horizon = 53
-    orders_fc = _forecast(joined["orders"], horizon)
-    requests_fc = _forecast(joined["requests"], horizon)
+    horizon = 13
+    fc = _forecast(orders, horizon)
     report["forecast"] = {
+        "method": "SARIMAX(1,1,1)(1,1,0,12)",
+        "next_month": {"month": fc[0]["month"], "orders": fc[0]["point"]},
+        # A week is not modelled: there is no weekly series. The figure is the
+        # next month divided by 4.345 and is labelled as the approximation it is.
         "next_week": {
-            "week_start": orders_fc[0]["week_start"],
-            "orders": orders_fc[0]["point"],
-            "requests": requests_fc[0]["point"],
+            "orders": round(fc[0]["point"] / WEEKS_PER_MONTH),
+            "basis": "next month / 4.345 (no weekly series)",
         },
-        "next_month": {
-            "orders": int(sum(f["point"] for f in orders_fc[:4])),
-            "requests": int(sum(f["point"] for f in requests_fc[:4])),
+        "next_month_equivalent_requests": int(fc[0]["point"] * (eq_per_order or 0)),
+        "next_week": {
+            "orders": round(fc[0]["point"] / WEEKS_PER_MONTH),
+            "basis": f"next month divided by {WEEKS_PER_MONTH:.3f} weeks",
         },
-        "next_twelve_months": {
-            "orders": int(sum(f["point"] for f in orders_fc[:52])),
-            "requests": int(sum(f["point"] for f in requests_fc[:52])),
+        "ntm": {
+            "months": [f["month"] for f in fc[:12]],
+            "orders": int(sum(f["point"] for f in fc[:12])),
+            "equivalent_requests": int(sum(f["point"] for f in fc[:12]) * (eq_per_order or 0)),
         },
-        "confidence_80_next_week": {
-            "orders": [orders_fc[0]["low"], orders_fc[0]["high"]],
-            "requests": [requests_fc[0]["low"], requests_fc[0]["high"]],
-        },
+        "confidence_80_next_month": {"orders": [fc[0]["low"], fc[0]["high"]]},
     }
     return report
