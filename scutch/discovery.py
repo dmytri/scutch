@@ -116,6 +116,13 @@ def doctor(ws) -> dict[str, Any]:
         check("jsonschema", False, str(exc))
 
 
+    try:
+        from . import tui
+
+        check("tui", tui.available(), "guided human interface" if tui.available() else "textual not importable")
+    except Exception as exc:  # noqa: BLE001
+        check("tui", False, str(exc))
+
     check(
         "just",
         shutil.which("just") is not None,

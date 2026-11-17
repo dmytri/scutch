@@ -222,6 +222,44 @@ def status_cmd(
     raise typer.Exit(code)
 
 
+@app.command("ui")
+def ui_cmd(
+    run: str | None = typer.Argument(None, help="Open straight into an operation or feature"),
+    operation: str | None = typer.Option(None, "--operation", "-o"),
+    feature: str | None = typer.Option(None, "--workflow", "-w"),
+) -> None:
+    """Open the guided terminal interface.
+
+    The human side of the same lifecycle: pick an operation, fill a form, read a
+    plain-language summary, approve, see labelled results. Approving here is
+    exactly `--approve-plan <digest>`, and every screen shows the command that
+    reproduces it.
+    """
+    from . import tui
+
+    ws = _ws()
+    if not tui.available():
+        _fail(UsageError(
+            "the terminal interface needs textual",
+            hint="textual is a declared dependency; reinstall scutch",
+        ))
+    from .workspace import resolve_feature
+
+    target_op = operation
+    target_feature = None
+    reference = run or feature
+    if reference:
+        try:
+            ws.registry.get(reference)
+            target_op = reference
+        except ScutchError:
+            try:
+                target_feature = resolve_feature(ws, reference)
+            except ScutchError as exc:
+                _fail(exc)
+    tui.run_ui(ws, feature=target_feature, operation=target_op)
+
+
 @app.command("cancel")
 def cancel_cmd(
     job_or_run: str = typer.Argument(..., help="Job or run id from a needs_approval envelope"),
@@ -293,28 +331,13 @@ def workflow_cmd(
     from .harness import LocalHarness
     from .steps import LIBRARY, Steps
 
+    from .workspace import resolve_feature
+
     ws = _ws()
-    specs_dir = ws.root / ws.conventions.features_root
-    candidate = Path(feature)
-    if not candidate.is_file():
-        matches = sorted(specs_dir.rglob(f"*{feature}*")) if specs_dir.is_dir() else []
-        matches = [m for m in matches if m.suffix == ".feature"]
-        exact = [m for m in matches if m.stem == feature]
-        # An exact stem match wins outright: `customer_repair` means that file,
-        # not `api_customer_repair`. Otherwise ambiguity is refused, because
-        # running the wrong workflow is worse than making the caller be precise.
-        if len(exact) == 1:
-            candidate = exact[0]
-        elif not matches:
-            _fail(UsageError(f"no feature {feature!r} in {specs_dir}"))
-        else:
-            _fail(
-                UsageError(
-                    f"ambiguous feature {feature!r}",
-                    hint="candidates: "
-                    + str([str(m.relative_to(specs_dir)) for m in matches]),
-                )
-            )
+    try:
+        candidate = resolve_feature(ws, feature)
+    except ScutchError as exc:
+        _fail(exc)
 
     scenarios = g.parse_feature(candidate)
     if list_only:

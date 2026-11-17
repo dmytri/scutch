@@ -53,6 +53,13 @@ JSON
 `--input` also accepts a literal JSON string or a file path. JSON goes to
 stdout; diagnostics go to stderr. Nothing blocks waiting for a prompt.
 
+## Human vs agent
+
+You are the agent. Stay on the CLI: read envelopes, run `next.argv` verbatim,
+never prompt. `scutch ui` is for people — it renders the same envelopes as
+guided screens. Do not use it to get work done; if a human needs to approve
+something, tell them the operation and the digest, and let them decide.
+
 ## Workflows
 
 A feature file *is* a workflow: its scenarios are steps, run in order against one

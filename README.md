@@ -75,6 +75,32 @@ Read-only operations need no approval:
 scutch run saleor.customer.list --input '{}'
 ```
 
+## Two interfaces, one lifecycle
+
+The same operation, invoked by an agent and by a person:
+
+| | Agent | Person |
+|---|---|---|
+| entry | `scutch run … --format json` | `scutch ui` |
+| gets | envelope: `status`, `next.argv`, error codes | guided screens, plain sentences |
+| form | `--input @-` (validated JSON) | generated fields with hints |
+| decision | `--approve-plan <digest>` | an "Approve" button, same digest |
+| result | projected `result` object | labelled rows, held-back fields named |
+| keeps going by | executing `next.argv` verbatim | pressing the button it suggests |
+| never | prompts, or blocks waiting | shows a credential value |
+
+`scutch ui` is a **projection**, not a second implementation: it calls the same
+runner, so an approval made in the TUI is `--approve-plan <digest>` and nothing
+else. A test asserts the CLI and the TUI compute the *same plan digest* for the
+same inputs — if they ever diverged, a person would be approving something the
+agent would not.
+
+```bash
+scutch ui                              # home: operations and workflows
+scutch ui saleor.customer.repair       # straight into one operation
+scutch ui customer_repair              # straight into a workflow
+```
+
 ## Lifecycle
 
 Every response is an envelope. `status` is one of

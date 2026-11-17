@@ -120,9 +120,21 @@ class Workspace:
                 "artifacts": "restricted by default; only declared artifacts are citable",
             },
             "conventions": self.conventions.to_json(),
+            # One lifecycle, two interfaces. They differ in *how* they explain
+            # themselves, never in what they do: the TUI calls the same runner,
+            # so an approval there is `--approve-plan <digest>` and nothing else.
             "interfaces": {
-                "json": "stdout only; diagnostics on stderr; never blocks on a prompt",
-                "ui": "scutch ui",
+                "agent": {
+                    "command": "scutch run|describe|status|workflow --format json",
+                    "contract": "envelope in, `next.argv` out; never blocks on a prompt",
+                    "phrasing": "status codes, structured errors, exact continuation argv",
+                },
+                "human": {
+                    "command": "scutch ui [operation|workflow]",
+                    "contract": "guided screens over the same envelopes and run records",
+                    "phrasing": "plain sentences, generated forms, labelled results, "
+                    "plain-language change summary before approval",
+                },
                 "aliases": "just recipes wrap canonical invocations",
             },
             "providers": {
@@ -131,6 +143,34 @@ class Workspace:
             },
             "operations": self.catalog(),
         }
+
+
+def resolve_feature(ws, reference: str) -> Path:
+    """Resolve a feature reference the one way every command should.
+
+    A path is a path. A bare name means an exact stem match in the features
+    root; failing that a single substring match. Ambiguity is refused rather
+    than guessed — running the wrong workflow is worse than being told to be
+    precise.
+    """
+    candidate = Path(reference)
+    if candidate.is_file():
+        return candidate
+    root = ws.root / ws.conventions.features_root
+    if not root.is_dir():
+        raise UsageError(f"no features directory at {root}")
+    matches = sorted(p for p in root.rglob(f"*{reference}*") if p.suffix == ".feature")
+    exact = [m for m in matches if m.stem == reference]
+    if len(exact) == 1:
+        return exact[0]
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        raise UsageError(f"no feature {reference!r} in {root}")
+    raise UsageError(
+        f"ambiguous feature {reference!r}",
+        hint="candidates: " + str([str(m.relative_to(root)) for m in matches]),
+    )
 
 
 def _load_module(path: Path, module_name: str):
