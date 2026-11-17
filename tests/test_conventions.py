@@ -86,3 +86,23 @@ def test_unclaimed_operation_fails(cli):
     c = check(doctor(cli), "features")
     assert not c["ok"]
     assert "saleor.customer.list" in json.dumps(c["detail"])
+
+
+def test_doctor_requires_duckdb_because_queries_are_sql(workspace, cli, monkeypatch):
+    """A workspace declaring SQL queries cannot run without the binary.
+
+    Found from a clean clone: the tests passed locally only because duckdb
+    happened to be on PATH. Discovering that at run time is too late.
+    """
+    import shutil as _shutil
+    from scutch import discovery
+    from scutch.workspace import load_workspace
+
+    real_which = _shutil.which
+    monkeypatch.setattr(
+        discovery.shutil, "which", lambda name: None if name == "duckdb" else real_which(name)
+    )
+    report = discovery.doctor(load_workspace(workspace))
+    check_result = check(report, "duckdb_available")
+    assert not check_result["ok"]
+    assert not report["ok"]

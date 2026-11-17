@@ -308,6 +308,14 @@ def check_conventions(ws, check) -> None:
     conv = ws.conventions
 
     if conv.queries == "duckdb":
+        # A workspace that declares SQL queries cannot run them without the
+        # binary, and discovering that at run time is discovering it too late.
+        binary = shutil.which("duckdb")
+        check(
+            "duckdb_available",
+            binary is not None,
+            binary or "install duckdb: queries are declared as .sql files",
+        )
         # An operation that claims to transform data must point at its .sql.
         # `query=` is the declaration; the file must exist.
         no_sql = [
