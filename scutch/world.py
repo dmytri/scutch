@@ -1,4 +1,4 @@
-"""One seam. Every effect goes through ``io(kind, **args)``.
+"""One seam. Every effect goes through ``world(kind, **args)``.
 
 kinds: ``read``, ``write``, ``exec``, ``http``. Nothing else reaches the world.
 
@@ -13,7 +13,7 @@ There are two ideas, and only two:
     ``False`` means writes do not happen. A dry run uses this to learn what the
     operation *would* do without doing it.
 
-An operation is an ordinary function taking ``io`` first. It is the whole
+An operation is an ordinary function taking ``world`` first. It is the whole
 contract: the plan is the effects it asked for, and approval binds to that.
 """
 
@@ -32,7 +32,7 @@ from .errors import Failed, Missing, ScutchError, Unanswered, Unapproved, Unknow
 from .secrets import MissingSecret
 
 __all__ = [
-    "Failed", "IO", "KINDS", "EFFECTS", "Missing", "MissingSecret", "OPAQUE",
+    "Failed", "World", "KINDS", "EFFECTS", "Missing", "MissingSecret", "OPAQUE",
     "ScutchError", "Unanswered", "Unapproved", "UnknownEffect", "digest", "key",
 ]
 
@@ -76,7 +76,7 @@ def digest(effects: list[str]) -> str:
 
 
 @dataclasses.dataclass
-class IO:
+class World:
     """The single door to the world."""
 
     root: Path

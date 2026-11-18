@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from . import catalogue
-from .io import ScutchError, Unanswered, Unapproved
+from .world import ScutchError, Unanswered, Unapproved
 from .run import run as run_operation
 
 USAGE = """scutch list

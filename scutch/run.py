@@ -17,7 +17,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 
-from .io import IO, Unapproved, digest
+from .world import World, Unapproved, digest
 from .secrets import Vault
 
 Operation = Callable[..., Any]
@@ -25,9 +25,9 @@ Operation = Callable[..., Any]
 
 def plan(op: Operation, *, root: Path | str, inputs: dict[str, Any], answers=None) -> dict[str, Any]:
     """What would this do? Reads are real; effects are only recorded."""
-    io = IO(root=root, answers=answers, execute=False, vault=Vault())
-    result = op(io, **inputs)
-    effects = io.effects
+    world = World(root=root, answers=answers, execute=False, vault=Vault())
+    result = op(world, **inputs)
+    effects = world.effects
     return {
         "status": "dry",
         "result": result,
@@ -51,9 +51,9 @@ def apply(
             f"approved {approve}, but this run would do {planned['digest']}"
         )
 
-    io = IO(root=root, answers=answers, execute=True, vault=Vault())
-    result = op(io, **inputs)
-    if digest(io.effects) != planned["digest"]:
+    world = World(root=root, answers=answers, execute=True, vault=Vault())
+    result = op(world, **inputs)
+    if digest(world.effects) != planned["digest"]:
         # The world moved between the dry pass and the apply pass. Refuse, and
         # say so: a run that silently applied a different plan is the bug this
         # whole design exists to prevent.
@@ -61,7 +61,7 @@ def apply(
     return {
         "status": "applied",
         "result": result,
-        "effects": io.effects,
+        "effects": world.effects,
         "digest": planned["digest"],
     }
 

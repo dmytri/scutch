@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from scutch import IO
+from scutch import World
 from scutch.secrets import MissingSecret, Vault, resolve
 
 
@@ -37,15 +37,15 @@ def test_a_file_reference_reads_the_file(tmp_path):
 
 
 def test_a_secret_is_never_an_effect(tmp_path):
-    io = IO(root=tmp_path, vault=Vault({"env:T": "s3cret"}))
-    assert io("secret", name="env:T") == "s3cret"
-    assert io.effects == []
-    assert io.observations
+    world = World(root=tmp_path, vault=Vault({"env:T": "s3cret"}))
+    assert world("secret", name="env:T") == "s3cret"
+    assert world.effects == []
+    assert world.observations
 
 
 def test_a_dry_run_does_not_resolve_a_secret(tmp_path):
-    io = IO(root=tmp_path, execute=False)
-    assert io("secret", name="env:NOT_SET") == "<unresolved>"
+    world = World(root=tmp_path, execute=False)
+    assert world("secret", name="env:NOT_SET") == "<unresolved>"
 
 
 def test_the_vault_repr_holds_no_values():

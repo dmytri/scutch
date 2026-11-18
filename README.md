@@ -2,7 +2,7 @@
 
 **A folder of plain functions, and one seam to the world.**
 
-An operation is a Python function that takes `io` first. Every effect it can have
+An operation is a Python function that takes `world` first. Every effect it can have
 — reading, writing, running a command, calling an HTTP endpoint — goes through
 that one object. So the plan is exactly the effects the function asked for, and
 approving a plan means approving that list.
@@ -26,8 +26,13 @@ $ scutch run orders.fulfil --input '{"order_id":"ord_a1"}' --approve sha256:0eaf
 One function:
 
 ```python
-io(kind, **args)          # kind: read | write | exec | http
+world(kind, **args)       # kind: read | write | exec | http
 ```
+
+It is called `world` rather than `io` on purpose: `io` is a stdlib module, so an
+operation doing `import io` would silently get the seam instead, and the failure
+would be baffling rather than loud. `world` shadows nothing and says what the
+object is — ask the world and it answers, or does what you asked.
 
 Three modes, and nothing between them:
 
@@ -148,7 +153,7 @@ Four orders: `ord_a1` and `ord_b1` are `placed`, `ord_a2` is `fulfilled`,
 
 No workflow engine, no scheduler, no durable execution. If a job needs
 distributed retries, a real engine can call these functions — they are ordinary
-Python that happens to take `io`.
+Python that happens to take `world`.
 
 ## Running the tests
 
@@ -163,7 +168,7 @@ An operation asks for a secret **by name**; where the value comes from is decide
 in one place:
 
 ```python
-api_key = io("secret", name="METABASE_API_KEY")
+api_key = world("secret", name="METABASE_API_KEY")
 ```
 
 ```console

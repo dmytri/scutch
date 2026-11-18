@@ -67,7 +67,7 @@ def _forecast(series, steps):
 
 
 def customer_usage(
-    io,
+    world,
     customer: str,
     project: str,
     orders_export: str = "fixtures/metabase/orders_acme.json",
@@ -81,10 +81,10 @@ def customer_usage(
     than reconstructing it from an API that needs a token.
     """
     orders = _monthly(
-        io("run", operation="usage.metabase", export=orders_export, customer=customer)["rows"],
+        world("run", operation="usage.metabase", export=orders_export, customer=customer)["rows"],
         "orders",
     )
-    hosting = io("run", operation="usage.vercel", export=billing_export)
+    hosting = world("run", operation="usage.vercel", export=billing_export)
 
     latest = orders.iloc[-1]
     latest_month = str(orders.index[-1])

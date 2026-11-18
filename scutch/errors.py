@@ -1,6 +1,6 @@
 """The failures a caller can act on.
 
-Kept apart from `io` so that anything may raise one without importing the seam
+Kept apart from the seam so that anything may raise one without importing the seam
 (which would be a cycle).
 """
 
@@ -18,7 +18,7 @@ class Unapproved(ScutchError):
 
 
 class UnknownEffect(ScutchError):
-    """An ``io`` kind outside the known set."""
+    """A kind outside the known set."""
 
 
 class Failed(ScutchError):

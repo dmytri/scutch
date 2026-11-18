@@ -2,19 +2,19 @@
 
 The whole interface:
 
-    from scutch import IO, run, discover
+    from scutch import World, run, discover
 
     env = run(fn, root=ws, inputs={"order_id": "ord_a1"})          # plan
     env = run(fn, root=ws, inputs={...}, approve=env["digest"])    # apply
 """
 
 from .catalogue import Operation, UnknownOperation, discover, get
-from .io import IO, Failed, Missing, ScutchError, Unanswered, Unapproved, UnknownEffect, digest, key
+from .world import World, Failed, Missing, ScutchError, Unanswered, Unapproved, UnknownEffect, digest, key
 from .run import apply, plan, run
 
 __all__ = [
     "Failed",
-    "IO",
+    "World",
     "Missing",
     "Operation",
     "ScutchError",

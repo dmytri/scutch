@@ -11,9 +11,9 @@ an invented observation.
 import json
 
 
-def orders_per_month(io, export: str, customer: str = ""):
+def orders_per_month(world, export: str, customer: str = ""):
     """Monthly order counts, oldest first, from one export file."""
-    raw = io("read", path=export)
+    raw = world("read", path=export)
     payload = json.loads(raw)
     if isinstance(payload, dict):
         payload = payload.get("rows") or payload.get("data", {}).get("rows") or []

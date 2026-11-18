@@ -2,14 +2,14 @@
 import json
 
 
-def fulfil_all(io):
+def fulfil_all(world):
     """One approval covers every outstanding order, as a single change."""
-    data = json.loads(io("read", path="ledger.json"))
+    data = json.loads(world("read", path="ledger.json"))
     placed = [o for o in data["orders"] if o["status"] == "placed"]
     if not placed:
         return {"fulfilled": [], "remaining": 0}
     for order in placed:
         order["status"] = "fulfilled"
-    io("write", path="ledger.json", text=json.dumps(data, indent=2, sort_keys=True) + "\n")
+    world("write", path="ledger.json", text=json.dumps(data, indent=2, sort_keys=True) + "\n")
     remaining = len([o for o in data["orders"] if o["status"] == "placed"])
     return {"fulfilled": [o["id"] for o in placed], "remaining": remaining}

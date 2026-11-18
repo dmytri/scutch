@@ -1,7 +1,7 @@
 """Discover operations: a folder of plain functions.
 
 An operation is a module in ``operations/`` holding a function whose first
-parameter is ``io``. The module's dotted path *is* the operation name, so
+parameter is ``world``. The module's dotted path *is* the operation name, so
 ``operations/orders/fulfil.py`` is ``orders.fulfil``.
 
 There is no registry, no decorator and no directory of metadata. The folder is
@@ -18,7 +18,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from .io import ScutchError
+from .world import ScutchError
+
+
+#: The name an operation must give its seam parameter.
+#:
+#: `io` would have been the obvious choice and is exactly wrong: it is a stdlib
+#: module, so an operation that did `import io` would get the seam instead, and
+#: the failure would be confusing rather than loud. `world` says what the object
+#: is — ask the world — and shadows nothing.
+WORLD_PARAM = "world"
 
 
 class UnknownOperation(ScutchError):
@@ -33,10 +42,10 @@ class Operation:
 
     @property
     def parameters(self) -> list[dict[str, Any]]:
-        """The call signature, minus `io` — what a caller must supply."""
+        """The call signature, minus `world` — what a caller must supply."""
         out = []
         for parameter in inspect.signature(self.fn).parameters.values():
-            if parameter.name == "io":
+            if parameter.name == WORLD_PARAM:
                 continue
             out.append(
                 {
@@ -51,7 +60,7 @@ class Operation:
 
     @property
     def calls(self) -> list[str]:
-        """Operations this one composes, read from `io("run", operation=...)`.
+        """Operations this one composes, read from `world("run", operation=...)`.
 
         A workflow is an operation that calls operations. Declaring that in the
         code — rather than in a separate YAML — means the steps and the code
@@ -131,18 +140,18 @@ def _load(path: Path, name: str) -> Callable[..., Any]:
         member
         for _, member in inspect.getmembers(module, inspect.isfunction)
         # A leading underscore marks a helper explicitly, so it is not the
-        # operation even if it takes `io`.
+        # operation even if it takes `world`.
         if not member.__name__.startswith("_")
-        and list(inspect.signature(member).parameters)[:1] == ["io"]
+        and list(inspect.signature(member).parameters)[:1] == [WORLD_PARAM]
     ]
     if not found:
         raise ScutchError(
-            f"{path} defines no operation: expected a function whose first parameter is `io`"
+            f"{path} defines no operation: expected a function whose first parameter is `world`"
         )
     if len(found) > 1:
         # Picking one silently is how a module ends up exposing the wrong
         # operation for months. The file *is* the operation; a helper that takes
-        # `io` must be named with a leading underscore or moved elsewhere.
+        # `world` must be named with a leading underscore or moved elsewhere.
         names = ", ".join(sorted(fn.__name__ for fn in found))
         raise ScutchError(
             f"{path} defines {len(found)} operations ({names}); "

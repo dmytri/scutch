@@ -32,7 +32,7 @@ from textual.widgets import (
 )
 
 from . import catalogue
-from .io import ScutchError, Unapproved
+from .world import ScutchError, Unapproved
 from .run import apply as apply_plan
 from .run import plan as make_plan
 

@@ -12,7 +12,7 @@ import pytest
 
 pytest.importorskip("statsmodels")
 
-from scutch import IO  # noqa: E402
+from scutch import World  # noqa: E402
 from scutch.catalogue import get  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
@@ -21,9 +21,9 @@ BILLING = REPO / "fixtures" / "vercel" / "billing_acme.jsonl"
 
 
 def report(**kwargs):
-    io = IO(root=REPO)
+    world = World(root=REPO)
     return get(REPO, "usage.analyse").fn(
-        io, customer="acme", project="acme-app", orders_export=str(ORDERS),
+        world, customer="acme", project="acme-app", orders_export=str(ORDERS),
         billing_export=str(BILLING), **kwargs
     )
 
@@ -35,13 +35,13 @@ def test_the_workflow_is_visible_in_the_catalogue():
 
 def test_it_reads_files_and_calls_no_network():
     """Both inputs are exports, so the whole workflow is offline and repeatable."""
-    io = IO(root=REPO)
+    world = World(root=REPO)
     get(REPO, "usage.analyse").fn(
-        io, customer="acme", project="acme-app",
+        world, customer="acme", project="acme-app",
         orders_export=str(ORDERS), billing_export=str(BILLING),
     )
-    assert io.effects == []
-    assert all(json.loads(a)["kind"] in ("read", "run") for a in io.asks)
+    assert world.effects == []
+    assert all(json.loads(a)["kind"] in ("read", "run") for a in world.asks)
 
 
 def test_the_windows_are_reproducible_from_the_sql_file():
@@ -80,8 +80,8 @@ def test_a_truncated_billing_export_is_reported_not_ignored(tmp_path):
     lines = BILLING.read_text().splitlines()
     broken = tmp_path / "broken.jsonl"
     broken.write_text("\n".join(lines[:3] + ["{not json"]))
-    io = IO(root=REPO)
-    got = get(REPO, "usage.vercel").fn(io, export=str(broken))
+    world = World(root=REPO)
+    got = get(REPO, "usage.vercel").fn(world, export=str(broken))
     assert got["unparseable"] == 1
     assert got["records"] == 3
 
@@ -103,6 +103,6 @@ def test_a_missing_month_column_fails_rather_than_inventing_zeros(tmp_path):
 
     bad = tmp_path / "orders.json"
     bad.write_text(_json.dumps({"rows": [{"period": "2026-01", "orders": 5}]}))
-    io = IO(root=REPO)
+    world = World(root=REPO)
     with pytest.raises(KeyError):
-        get(REPO, "usage.metabase").fn(io, customer="acme", export=str(bad))
+        get(REPO, "usage.metabase").fn(world, customer="acme", export=str(bad))

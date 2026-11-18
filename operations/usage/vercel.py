@@ -34,14 +34,14 @@ TRANSFER_NAMES = ("Fast Data Transfer", "Fast Origin Transfer")
 IMAGE_NAME = "Image Optimization Transformation"
 
 
-def _billing_counters(io, export: str):
+def _billing_counters(world, export: str):
     """Quantities per billing SKU, summed over an export.
 
     A FOCUS export is JSON Lines: one record per period per service. Blank and
     unparseable lines are counted and reported, never silently skipped — a
     truncated download should look truncated.
     """
-    raw = io("read", path=export)
+    raw = world("read", path=export)
     totals: dict[str, float] = {}
     records = 0
     bad = 0
@@ -59,13 +59,13 @@ def _billing_counters(io, export: str):
     return {"totals": totals, "records": records, "unparseable": bad}
 
 
-def equivalent_requests(io, export: str):
+def equivalent_requests(world, export: str):
     """Hosting converted into equivalent requests, with every component shown.
 
     Each component is reported raw *and* converted, so a customer conversation
     can explain the number rather than assert it.
     """
-    counted = _billing_counters(io, export=export)
+    counted = _billing_counters(world, export=export)
     totals = counted["totals"]
 
     edge = sum(totals.get(name, 0.0) for name in CDN_NAMES)

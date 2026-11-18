@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from . import catalogue
-from .io import ScutchError, Unanswered, Unapproved
+from .world import ScutchError, Unanswered, Unapproved
 from .run import apply as apply_plan
 from .run import plan as make_plan
 
