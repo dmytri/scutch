@@ -84,7 +84,7 @@ class World:
     answers: list[Any] | None = None
     #: Whether writes, exec and http may happen.
     execute: bool = True
-    #: Resolves `env:NAME` / `cmd:...` / `file:...` to a value. Injected so a
+    #: Resolves `env:NAME`, or a bare name, to a value. Injected so a
     #: test never needs a real credential, and so a dry run resolves nothing.
     vault: Any = None
     calls: list[tuple[str, dict[str, Any]]] = dataclasses.field(default_factory=list)

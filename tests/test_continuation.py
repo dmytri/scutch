@@ -47,9 +47,7 @@ def test_extra_answers_are_visible_so_a_lost_ask_is_noticed(ws, ops):
 
 
 def test_the_plan_covers_http_as_well_as_write(ws, ops):
-    from scutch import plan
-
-    env = plan(ops["orders.notify"].fn, root=ws,
-               inputs={"order_id": "ord_a1", "url": "https://hooks.example/x"},
-               answers=[(ws / "ledger.json").read_text(), "ok"])
-    assert [json.loads(e)["kind"] for e in env["effects"]] == ["write", "http"]
+    world = World(root=ws, execute=False,
+                  answers=[(ws / "ledger.json").read_text(), "ok"])
+    ops["orders.notify"].fn(world, order_id="ord_a1", url="https://hooks.example/x")
+    assert [json.loads(e)["kind"] for e in world.effects] == ["write", "http"]

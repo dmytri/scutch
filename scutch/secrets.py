@@ -4,8 +4,7 @@ An operation asks for a secret by *name*. Where the value comes from is decided
 here, in one place, and never by the operation:
 
     env:FOO            environment variable FOO
-    cmd:pass show x    the stdout of a command
-    file:path          the contents of a file
+    FOO                the same, because it is the common case
 
 Two rules make this worth having rather than a wrapper around `os.environ`:
 
@@ -36,63 +35,36 @@ class MissingSecret(ScutchError):
 
 
 def resolve(reference: str) -> str:
-    """Turn `env:NAME` / `cmd:...` / `file:...` into a value.
+    """Turn `env:NAME` (or a bare `NAME`) into a value.
 
-    Anything else is treated as an environment variable name, because the most
-    common case should be the shortest to write.
+    Only the environment is read. `cmd:` and `file:` were built before anything
+    asked for them; when an operation needs one, that is the moment to add it,
+    and the test that proves it is worth writing then.
     """
-    kind, _, target = reference.partition(":")
-
-    if not _:
-        kind, target = "env", reference
-
-    if kind == "env":
-        value = os.environ.get(target)
-        if value is None:
-            raise MissingSecret(
-                f"secret {target} is not set",
-                hint=f"export {target}=... (or store it in `pass` and use cmd:pass show {target})",
-            )
-        return value
-
-    if kind == "cmd":
-        done = subprocess.run(target, shell=True, capture_output=True, text=True)
-        if done.returncode != 0:
-            # Neither stderr nor the command itself is shown: both can contain
-            # the secret, and a `cmd:curl -H "Authorization: Bearer xyz"` would
-            # put it in the error message.
-            raise MissingSecret(
-                f"secret command exited {done.returncode}",
-                hint="check the command outside scutch; its output and its text "
-                "are withheld because either can contain the secret",
-            )
-        return done.stdout.strip()
-
-    if kind == "file":
-        path = Path(target)
-        if not path.is_file():
-            raise MissingSecret(f"secret file {target} does not exist")
-        return path.read_text().strip()
-
-    raise MissingSecret(f"unknown secret reference {reference!r}")
+    name = reference.removeprefix("env:")
+    value = os.environ.get(name)
+    if value is None:
+        raise MissingSecret(
+            f"secret {name} is not set",
+            hint=f"export {name}=...",
+        )
+    return value
 
 
 class Vault:
-    """Resolves secret references for one run, with a cache.
+    """Resolves secret references for one run.
 
-    Caching matters: a workflow may need the same token for several steps, and
-    shelling out to `pass` once per call would be slow and could rotate mid-run.
+    `values` lets a test or a caller supply one directly, which is the only way
+    to run a secret-bearing operation without touching the environment.
     """
 
     def __init__(self, values: dict[str, str] | None = None):
-        self._cache: dict[str, str] = dict(values or {})
+        self._values = dict(values or {})
 
     def __call__(self, reference: str) -> str:
-        if reference not in self._cache:
-            self._cache[reference] = resolve(reference)
-        return self._cache[reference]
+        return self._values.get(reference) or resolve(reference)
 
     def __repr__(self) -> str:  # pragma: no cover - defensive
         # Never let a repr of the vault print a value.
-        return f"Vault({len(self._cache)} secret(s))"
+        return f"Vault({len(self._values)} secret(s))"
 

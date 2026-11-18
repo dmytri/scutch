@@ -22,7 +22,6 @@ scutch run OPERATION [--input JSON | --input @FILE] [--approve DIGEST]
 scutch run OPERATION --input - < input.json
 scutch check       every operation has a spec that matches its code
 scutch ui          browser (full screen)
-scutch prompt      the same steps, line by line
 
 Envelopes are JSON on stdout. A plan has a status of "dry"; repeat the same
 command with --approve DIGEST to apply exactly that plan."""
@@ -48,10 +47,6 @@ def main(argv: list[str] | None = None) -> int:
             from .browser import run as ui_run
 
             return ui_run(root)
-        if args[0] == "prompt":
-            from .tui import main as prompt_main
-
-            return prompt_main(root)
         return _fail(f"unknown command {args[0]!r}", 2)
     except (ScutchError, Unapproved, Unanswered) as exc:
         return _fail(str(exc), 1)

@@ -23,9 +23,9 @@ from .secrets import Vault
 Operation = Callable[..., Any]
 
 
-def plan(op: Operation, *, root: Path | str, inputs: dict[str, Any], answers=None) -> dict[str, Any]:
+def plan(op: Operation, *, root: Path | str, inputs: dict[str, Any]) -> dict[str, Any]:
     """What would this do? Reads are real; effects are only recorded."""
-    world = World(root=root, answers=answers, execute=False, vault=Vault())
+    world = World(root=root, execute=False, vault=Vault())
     result = op(world, **inputs)
     effects = world.effects
     return {
@@ -42,16 +42,15 @@ def apply(
     root: Path | str,
     inputs: dict[str, Any],
     approve: str,
-    answers=None,
 ) -> dict[str, Any]:
     """Do it, if the effects are exactly the ones approved."""
-    planned = plan(op, root=root, inputs=inputs, answers=answers)
+    planned = plan(op, root=root, inputs=inputs)
     if approve != planned["digest"]:
         raise Unapproved(
             f"approved {approve}, but this run would do {planned['digest']}"
         )
 
-    world = World(root=root, answers=answers, execute=True, vault=Vault())
+    world = World(root=root, execute=True, vault=Vault())
     result = op(world, **inputs)
     if digest(world.effects) != planned["digest"]:
         # The world moved between the dry pass and the apply pass. Refuse, and
@@ -72,9 +71,8 @@ def run(
     root: Path | str,
     inputs: dict[str, Any],
     approve: str | None = None,
-    answers=None,
 ) -> dict[str, Any]:
     """Plan when no approval is given, apply when it is. One entry point."""
     if approve is None:
-        return plan(op, root=root, inputs=inputs, answers=answers)
-    return apply(op, root=root, inputs=inputs, approve=approve, answers=answers)
+        return plan(op, root=root, inputs=inputs)
+    return apply(op, root=root, inputs=inputs, approve=approve)

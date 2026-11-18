@@ -126,29 +126,27 @@ scutch/
   world.py                the seam: read / write / exec / http / run / secret
   run.py                  plan and apply, two passes over one function
   catalogue.py            discover operations from the folder
-  cli.py                  list, describe, run, ui, prompt
+  cli.py                  list, describe, run, check, ui
   browser.py              the Textual browser
-  tui.py                  the same flow, line by line
   data/seed.json          the demo's starting data
 
 fixtures/                 weekly series standing in for the two APIs
-tests/                    seam, lifecycle, continuation, browser, cli, workflow
+tests/                    seam, lifecycle, continuation, browser, cli, specs
 ```
 
 ## Two ways in, same four steps
 
 An agent does: **list → describe → run (dry) → run --approve**. Both interfaces
 do exactly that, and both call `plan()` / `apply()` — so the digest on screen is
-the digest the CLI would print.
+the digest printed by `scutch run`.
 
 ```console
 $ scutch ui        # full-screen browser (Textual): list, form, review, table
-$ scutch prompt    # the same steps line by line, for a pipe or dumb terminal
 ```
 
 The browser shows the plan with a colour per effect kind and a `DataTable` for
-results; `prompt` prints the same plan as plain text. `ui` needs a terminal;
-`prompt` works anywhere, which is why it exists rather than being a flag.
+results. It reads through the same `Operation` objects, so a parameter cannot
+appear in the JSON and be missing from the form.
 
 ### Where is `ledger.json`?
 
@@ -187,21 +185,16 @@ api_key = world("secret", name="METABASE_API_KEY")
 ```
 
 ```console
-$ export METABASE_API_KEY=...        # or: cmd:pass show metabase
-$ export METABASE_API_KEY=cmd:pass\ show\ metabase   # in code
+$ export METABASE_API_KEY=...
 ```
-
-| reference | resolves to |
-|---|---|
-| `NAME` or `env:NAME` | an environment variable |
-| `cmd:pass show metabase` | a command's stdout |
-| `file:~/.secrets/metabase` | a file's contents |
 
 A secret is **not an effect**, so it never reaches the plan, the digest, the
 review screen or a run record. It is also not resolved during a dry run — planning
-should not need credentials. A missing one fails with its *name*, and neither a
-failing command's output nor its text is echoed, because either can contain the
-value.
+should not need credentials. A missing one fails with its *name* and no value.
+
+`cmd:` and `file:` sources were built before any operation asked for them and
+have been removed. Adding one back is a five-line change plus the test that
+makes it worth having.
 
 ### Queries are `.sql` files
 
