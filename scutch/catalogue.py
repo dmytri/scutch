@@ -21,15 +21,6 @@ from typing import Any, Callable
 from .world import ScutchError
 
 
-#: The name an operation must give its seam parameter.
-#:
-#: `io` would have been the obvious choice and is exactly wrong: it is a stdlib
-#: module, so an operation that did `import io` would get the seam instead, and
-#: the failure would be confusing rather than loud. `world` says what the object
-#: is — ask the world — and shadows nothing.
-WORLD_PARAM = "world"
-
-
 class UnknownOperation(ScutchError):
     """No operation by that name."""
 
@@ -45,7 +36,7 @@ class Operation:
         """The call signature, minus `world` — what a caller must supply."""
         out = []
         for parameter in inspect.signature(self.fn).parameters.values():
-            if parameter.name == WORLD_PARAM:
+            if parameter.name == "world":
                 continue
             out.append(
                 {
@@ -142,7 +133,7 @@ def _load(path: Path, name: str) -> Callable[..., Any]:
         # A leading underscore marks a helper explicitly, so it is not the
         # operation even if it takes `world`.
         if not member.__name__.startswith("_")
-        and list(inspect.signature(member).parameters)[:1] == [WORLD_PARAM]
+        and list(inspect.signature(member).parameters)[:1] == ["world"]
     ]
     if not found:
         raise ScutchError(
