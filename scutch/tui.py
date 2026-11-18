@@ -26,27 +26,24 @@ BANNER = "Scutch — pick an operation, fill it in, approve the effects."
 
 
 def effects_in_words(effects: list[str]) -> list[str]:
-    """Turn the plan into lines a person can read.
+    """The plan as plain text.
 
-    The plan is JSON because that is what gets hashed. This is a projection of
-    the same data: it reads the kinds it knows and states anything else plainly.
+    The browser's `effect_lines` is the same projection with colour markup; this
+    strips it, so there is one description of an effect rather than two that can
+    drift.
     """
-    if not effects:
-        return ["nothing — it is already in that state."]
-    out = []
-    for effect in effects:
-        change = json.loads(effect)
-        kind = change.get("kind")
-        if kind == "write":
-            out.append(f"write {change['path']}")
-        elif kind == "exec":
-            out.append("run " + " ".join(change["argv"]))
-        elif kind == "http":
-            out.append(f"{change.get('method', 'GET')} {change['url']}")
-        else:
-            out.append(effect)
-    return out
+    import re
 
+    from .browser import ICON, effect_lines
+
+    icon_classes = set(ICON.values())
+    out = []
+    for line in effect_lines(effects):
+        plain = re.sub(r"\[[^\]]*\]", "", line)
+        for icon in icon_classes:
+            plain = plain.replace(icon + " ", "")
+        out.append(plain.strip())
+    return out
 
 def ask(prompt: str, default: str | None = None) -> str:
     suffix = f" [{default}]" if default is not None else ""

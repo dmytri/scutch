@@ -96,7 +96,3 @@ class Vault:
         # Never let a repr of the vault print a value.
         return f"Vault({len(self._cache)} secret(s))"
 
-
-def redact(text: str, secret: str) -> str:
-    """Remove a secret from a string before it can be stored or shown."""
-    return text.replace(secret, "<redacted>") if secret else text

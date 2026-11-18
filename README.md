@@ -123,7 +123,7 @@ operations/orders/        a smaller demo — a JSON ledger
   notify.py               orders.notify      write + POST, two effects
 
 scutch/
-  io.py                   the seam: read / write / exec / http
+  world.py                the seam: read / write / exec / http / run / secret
   run.py                  plan and apply, two passes over one function
   catalogue.py            discover operations from the folder
   cli.py                  list, describe, run, ui, prompt
@@ -134,6 +134,21 @@ scutch/
 fixtures/                 weekly series standing in for the two APIs
 tests/                    seam, lifecycle, continuation, browser, cli, workflow
 ```
+
+## Two ways in, same four steps
+
+An agent does: **list → describe → run (dry) → run --approve**. Both interfaces
+do exactly that, and both call `plan()` / `apply()` — so the digest on screen is
+the digest the CLI would print.
+
+```console
+$ scutch ui        # full-screen browser (Textual): list, form, review, table
+$ scutch prompt    # the same steps line by line, for a pipe or dumb terminal
+```
+
+The browser shows the plan with a colour per effect kind and a `DataTable` for
+results; `prompt` prints the same plan as plain text. `ui` needs a terminal;
+`prompt` works anywhere, which is why it exists rather than being a flag.
 
 ### Where is `ledger.json`?
 
